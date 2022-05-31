@@ -123,7 +123,8 @@ bool MoveItIKSolver::initialize(
 
 std::optional<double> MoveItIKSolver::solveIKFromSeed(
     const Eigen::Isometry3d& target, const std::map<std::string, double>& seed,
-    std::vector<double>& solution) {
+    std::vector<double>& solution, std::vector<double>& joint_space_trajectory,
+    std::vector<double>& cartesian_space_waypoints, double& fraction) {
   moveit::core::RobotState state(model_);
 
   const std::vector<std::string>& joint_names =
@@ -140,12 +141,14 @@ std::optional<double> MoveItIKSolver::solveIKFromSeed(
   state.update();
 
   //  const static int SOLUTION_ATTEMPTS = 3;
-  const static double SOLUTION_TIMEOUT = 0.2;
+  // use default timeout for the ik solver
+  const static double SOLUTION_TIMEOUT = 0.0;
 
   if (state.setFromIK(jmg_, target, SOLUTION_TIMEOUT,
                       std::bind(&MoveItIKSolver::isIKSolutionValid, this,
                                 std::placeholders::_1, std::placeholders::_2,
                                 std::placeholders::_3))) {
+    fraction = 1.0;
     solution.clear();
     state.copyJointGroupPositions(jmg_, solution);
 
@@ -157,6 +160,7 @@ std::optional<double> MoveItIKSolver::solveIKFromSeed(
 
     return eval_->calculateScore(solution_map);
   } else {
+    fraction = 0.0;
     return {};
   }
 }
@@ -173,12 +177,15 @@ bool MoveItIKSolver::isIKSolutionValid(moveit::core::RobotState* state,
       (scene_->distanceToCollision(
            *state, scene_->getAllowedCollisionMatrix()) < distance_threshold_);
 
-  //  if (!colliding && !too_close){
-  //      scene_->setCurrentState(*state);
-  //      moveit_msgs::msg::PlanningScene scene_msg;
-  //      scene_->getPlanningSceneMsg(scene_msg);
-  //      scene_pub_->publish(scene_msg);
-  //  }
+  // visualization part for debugging purposes only
+  /*
+    if (!colliding && !too_close){
+        scene_->setCurrentState(*state);
+        moveit_msgs::msg::PlanningScene scene_msg;
+        scene_->getPlanningSceneMsg(scene_msg);
+        scene_pub_->publish(scene_msg);
+    }
+    */
   return (!colliding && !too_close);
 }
 

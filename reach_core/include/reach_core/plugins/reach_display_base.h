@@ -49,6 +49,7 @@ class DisplayBase {
     server_.reset();
     diff_pub_.reset();
     marker_pub_.reset();
+    db_visualize_pub_.reset();
   }
 
   virtual bool initialize(
@@ -61,6 +62,11 @@ class DisplayBase {
         REACH_DIFF_TOPIC, 1);
     marker_pub_ = node->create_publisher<visualization_msgs::msg::Marker>(
         MARKER_TOPIC, 1);
+
+    db_visualize_pub_ =
+        node->create_publisher<visualization_msgs::msg::MarkerArray>(
+            "visualized_dbs", 1);
+
     RCLCPP_INFO(LOGGER, "Initialized DisplayBase plugin!");
     return true;
   };
@@ -71,6 +77,9 @@ class DisplayBase {
                                const std::vector<double> &positions) = 0;
 
   virtual void updateRobotPose(const std::map<std::string, double> &pose) = 0;
+
+  virtual void updateRobotTrajectory(
+      const std::vector<std::map<std::string, double>> &trajectory) = 0;
 
   void addInteractiveMarkerData(
       const reach_msgs::msg::ReachDatabase &database) {
@@ -198,6 +207,38 @@ class DisplayBase {
     diff_pub_->publish(marker_array);
   }
 
+  void visualizeDatabases(
+      const std::map<std::string, reach_msgs::msg::ReachDatabase> &data) {
+    const std::size_t n_records = data.begin()->second.records.size();
+
+    // Check that all databases are the same size
+    for (auto it = std::next(data.begin()); it != data.end(); ++it) {
+      if (it->second.records.size() != n_records) {
+        RCLCPP_FATAL(LOGGER, "Mismatched database sizes");
+      }
+    }
+
+    // Create Rviz marker array
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    // Iterate over all records in the databases and compare whether or not they
+    // were reached in that database
+    RCLCPP_INFO(LOGGER, "Visualizing databases with '%zu' records.", n_records);
+    for (std::size_t i = 0; i < n_records; ++i) {
+      visualization_msgs::msg::Marker arrow_marker;
+      for (auto it = data.begin(); it != data.end(); ++it) {
+        arrow_marker =
+            utils::makeVisual(node_, it->second.records[i], fixed_frame_,
+                              marker_scale_, it->first);
+        if (it->second.records[i].reached) {
+          marker_array.markers.push_back(arrow_marker);
+        }
+      }
+    }
+
+    db_visualize_pub_->publish(marker_array);
+  }
+
  public:
   std::shared_ptr<rclcpp::Node> node_;
 
@@ -216,6 +257,8 @@ class DisplayBase {
 
   std::shared_ptr<rclcpp::Publisher<visualization_msgs::msg::Marker>>
       marker_pub_;
+  std::shared_ptr<rclcpp::Publisher<visualization_msgs::msg::MarkerArray>>
+      db_visualize_pub_;
 };
 typedef std::shared_ptr<DisplayBase> DisplayBasePtr;
 

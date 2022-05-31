@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Southwest Research Institute
+ * Copyright 2022 PickNik, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,39 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MOVEIT_REACH_PLUGINS_IK_DISCRETIZED_MOVEIT_IK_SOLVER_H
-#define MOVEIT_REACH_PLUGINS_IK_DISCRETIZED_MOVEIT_IK_SOLVER_H
+#ifndef MOVEIT_REACH_PLUGINS_IK_CARTESIAN_RETRIEVAL_IK_SOLVER_H
+#define MOVEIT_REACH_PLUGINS_IK_CARTESIAN_RETRIEVAL_IK_SOLVER_H
 
 #include "moveit_ik_solver.h"
 
-namespace moveit_reach_plugins {
+#include <pluginlib/class_loader.hpp>
+#include <reach_core/plugins/evaluation_base.h>
 
+// PlanningScene
+#include <moveit_msgs/msg/planning_scene.hpp>
+
+// cartesian interpolator include
+#include <moveit/robot_state/cartesian_interpolator.h>
+
+namespace planning_scene {
+class PlanningScene;
+typedef std::shared_ptr<PlanningScene> PlanningScenePtr;
+}  // namespace planning_scene
+
+namespace moveit_reach_plugins {
+// using same LOGGER as MoveItIKSolver --> moveit_reach_plugins.MoveItIKSolver
 namespace ik {
 
-class DiscretizedMoveItIKSolver : public MoveItIKSolver {
+class CartesianRetrievalIKSolver : public MoveItIKSolver {
  public:
-  DiscretizedMoveItIKSolver();
+  CartesianRetrievalIKSolver();
 
-  ~DiscretizedMoveItIKSolver() = default;
+  ~CartesianRetrievalIKSolver() {
+    eval_.reset();
+    model_.reset();
+    scene_pub_.reset();
+    scene_.reset();
+  }
 
   virtual bool initialize(
       std::string& name, rclcpp::Node::SharedPtr node,
@@ -40,10 +59,14 @@ class DiscretizedMoveItIKSolver : public MoveItIKSolver {
       double& fraction) override;
 
  protected:
-  double dt_;
+  // distance to retrieve from ik solution in [m]
+  double retrieval_path_length_;
+  double jump_threshold_;
+  double max_eef_step_;
+  std::string tool_frame_;
 };
 
 }  // namespace ik
 }  // namespace moveit_reach_plugins
 
-#endif  // MOVEIT_REACH_PLUGINS_IK_DISCRETIZED_MOVEIT_IK_SOLVER_H
+#endif  // MOVEIT_REACH_PLUGINS_IK_CARTESIAN_RETRIEVAL_IK_SOLVER_H

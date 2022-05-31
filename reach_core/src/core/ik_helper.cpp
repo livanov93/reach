@@ -16,6 +16,7 @@
 #include "tf2_eigen/tf2_eigen.h"
 
 #include <reach_core/ik_helper.h>
+#include <reach_core/utils/general_utils.h>
 
 namespace reach {
 namespace core {
@@ -99,6 +100,8 @@ NeighborReachResult reachNeighborsDirect(
                                 rec.goal_state.position[i]);
     }
 
+    const std::vector<double> &current_pose = rec.goal_state.position;
+
     for (std::size_t i = 0; i < neighbors.size(); ++i) {
       // Initialize new target pose and new empty robot goal state
       Eigen::Isometry3d target;
@@ -106,10 +109,19 @@ NeighborReachResult reachNeighborsDirect(
 
       // Use current point's IK solution as seed
       std::vector<double> new_solution;
-      std::optional<double> score =
-          solver->solveIKFromSeed(target, previous_solution, new_solution);
+      std::vector<double> new_cartesian_space_waypoints;
+      std::vector<double> new_joint_space_trajectory;
+      double new_fraction = 0.0;
+      std::optional<double> score = solver->solveIKFromSeed(
+          target, previous_solution, new_solution, new_joint_space_trajectory,
+          new_cartesian_space_waypoints, new_fraction);
 
       if (score) {
+        // Calculate the joint distance between the seed and new goal states
+        for (std::size_t j = 0; j < current_pose.size(); ++j) {
+          result.joint_distance += std::abs(new_solution[j] - current_pose[j]);
+        }
+
         // Change database if currently solved point didn't have solution before
         // or if its current manipulability is better than that saved in the
         // databas
@@ -121,6 +133,9 @@ NeighborReachResult reachNeighborsDirect(
           msg.seed_state.position = rec.goal_state.position;
           msg.goal_state.position = new_solution;
           msg.score = *score;
+          msg.joint_space_trajectory = new_joint_space_trajectory;
+          msg.waypoints = new_cartesian_space_waypoints;
+          msg.retrieved_fraction = new_fraction;
           db->put(msg);
         }
 
@@ -167,9 +182,13 @@ void reachNeighborsRecursive(ReachDatabasePtr db,
         Eigen::Isometry3d target;
         tf2::fromMsg(neighbors[i].goal, target);
 
+        std::vector<double> cartesian_space_waypoints;
+        std::vector<double> joint_space_trajectory;
+        double fraction;
         // Use current point's IK solution as seed
-        std::optional<double> score =
-            solver->solveIKFromSeed(target, current_pose_map, new_pose);
+        std::optional<double> score = solver->solveIKFromSeed(
+            target, current_pose_map, new_pose, joint_space_trajectory,
+            cartesian_space_waypoints, fraction);
         if (score) {
           // Calculate the joint distance between the seed and new goal states
           for (std::size_t j = 0; j < current_pose.size(); ++j) {

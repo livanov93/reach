@@ -97,6 +97,16 @@ class RobotReachStudyNode : public rclcpp::Node {
         sp_.compare_dbs.clear();
       }
 
+      // additional parameters that don't have to be set
+      this->get_parameter_or("initial_seed_state", sp_.initial_seed_state, {});
+      this->get_parameter_or("keep_running", sp_.keep_running, false);
+      this->get_parameter_or("visualize_dbs", sp_.visualize_dbs, {});
+
+      if (std::find(sp_.visualize_dbs.begin(), sp_.visualize_dbs.end(), "") !=
+          sp_.visualize_dbs.end()) {
+        sp_.visualize_dbs.clear();
+      }
+
       // set params
       sp = sp_;
 
@@ -137,7 +147,9 @@ int main(int argc, char** argv) {
   if (!rs.run(sp) || !rclcpp::ok()) {
     RCLCPP_ERROR(rclcpp::get_logger("robot_reach_study_node"),
                  "Unable to perform the reach study");
-    return -1;
+    rclcpp::shutdown();
+    t1.join();
+    return 0;
   }
 
   rclcpp::shutdown();

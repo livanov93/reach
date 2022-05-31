@@ -29,6 +29,7 @@
 #include <reach_core/reach_visualizer.h>
 #include <reach_core/study_parameters.h>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_msgs/msg/empty.hpp>
 
 //
 // namespace moveit
@@ -84,6 +85,8 @@ class ReachStudy {
 
   bool compareDatabases();
 
+  bool visualizeDatabases();
+
   StudyParameters sp_;
 
   pcl::PointCloud<pcl::PointNormal>::Ptr cloud_;
@@ -108,6 +111,7 @@ class ReachStudy {
 
   std::shared_ptr<rclcpp::Node> node_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ps_pub_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr done_pub_;
 
   // robot model
   moveit::core::RobotModelConstPtr model_;

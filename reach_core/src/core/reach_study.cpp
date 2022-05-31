@@ -54,6 +54,12 @@ ReachStudy::ReachStudy(const rclcpp::Node::SharedPtr node)
 ReachStudy::~ReachStudy() {
   ik_solver_.reset();
   display_.reset();
+  visualizer_.reset();
+  db_.reset();
+  cloud_.reset();
+  node_.reset();
+  model_.reset();
+  ps_pub_.reset();
 }
 
 bool ReachStudy::initializeStudy(const StudyParameters &sp) {
@@ -65,6 +71,7 @@ bool ReachStudy::initializeStudy(const StudyParameters &sp) {
 
   ps_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>(
       "pose_stamped", 1);
+  done_pub_ = node_->create_publisher<std_msgs::msg::Empty>("analysis_done", 1);
 
   try {
     ik_solver_ = solver_loader_.createSharedInstance(sp_.ik_solver_config_name);
@@ -97,8 +104,6 @@ bool ReachStudy::initializeStudy(const StudyParameters &sp) {
     return false;
   }
 
-  display_->showEnvironment();
-
   // Create a directory to store results of study
   std::string tmp_dir =
       ament_index_cpp::get_package_share_directory(sp_.results_package) + "/" +
@@ -118,6 +123,11 @@ bool ReachStudy::initializeStudy(const StudyParameters &sp) {
     std::filesystem::path path(char_dir);
     std::filesystem::create_directory(path);
   }
+  if (sp_.keep_running){
+        // sleep to visualize collision object
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+  }
+  display_->showEnvironment();
 
   return true;
 }
@@ -168,6 +178,11 @@ bool ReachStudy::run(const StudyParameters &sp) {
       visualizer_->update();
       // check if we don't have to optimize
       if (sp.run_initial_study_only) {
+        done_pub_->publish(std_msgs::msg::Empty());
+        while (rclcpp::ok() && sp_.keep_running) {
+          // keep it running
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
         return true;
       }
     } else {
@@ -180,8 +195,14 @@ bool ReachStudy::run(const StudyParameters &sp) {
 
       db_->printResults();
       visualizer_->update();
+
       // check if we don't have to optimize
       if (sp.run_initial_study_only) {
+        done_pub_->publish(std_msgs::msg::Empty());
+        while (rclcpp::ok() && sp_.keep_running) {
+          // keep it running
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
         return true;
       }
     }
@@ -232,10 +253,26 @@ bool ReachStudy::run(const StudyParameters &sp) {
                      "the other specified databases");
       }
     }
+    if (!sp_.visualize_dbs.empty()) {
+      RCLCPP_INFO(LOGGER, "Visualizing databases...");
+      if (!visualizeDatabases()) {
+        RCLCPP_ERROR(LOGGER,
+                     "Unable to compare the current reach study database with "
+                     "the other specified databases");
+      }
+    }
+  }
+
+  done_pub_->publish(std_msgs::msg::Empty());
+
+  while (rclcpp::ok() && sp_.keep_running) {
+    // keep it running
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   ik_solver_.reset();
   display_.reset();
+  visualizer_.reset();
 
   return true;
 }
@@ -266,15 +303,15 @@ bool ReachStudy::getReachObjectPointCloud() {
                     inner_future) {
         success_tmp = inner_future.get()->success;
         cloud_msg_ = inner_future.get()->cloud;
-        RCLCPP_INFO(LOGGER, "Inner service callback message: '%s'",
-                    inner_future.get()->message.c_str());
+        RCLCPP_DEBUG(LOGGER, "Inner service callback message: '%s'",
+                     inner_future.get()->message.c_str());
         inner_callback_finished = true;
       };
   auto inner_future_result =
       client->async_send_request(req, inner_client_callback);
 
   // quick fix to wait for inner callback to finish
-  // TODO(livanov93) Add visible flag within the inner callback
+  // TODO(livanov93) Quick fix - find other solution
   while (!inner_callback_finished) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
@@ -315,12 +352,20 @@ void ReachStudy::runInitialReachStudy() {
     // Get the seed position
     sensor_msgs::msg::JointState seed_state;
     seed_state.name = ik_solver_->getJointNames();
+    //    if (seed_state.name.size() != sp_.initial_seed_state.size()) {
     seed_state.position = std::vector<double>(seed_state.name.size(), 0.0);
+    //    } else {
+    //      seed_state.position = sp_.initial_seed_state;
+    //    }
 
     // Solve IK
     std::vector<double> solution;
+    std::vector<double> cartesian_space_waypoints;
+    std::vector<double> joint_space_trajectory;
+    double fraction;
     std::optional<double> score = ik_solver_->solveIKFromSeed(
-        tgt_frame, jointStateMsgToMap(seed_state), solution);
+        tgt_frame, jointStateMsgToMap(seed_state), solution,
+        joint_space_trajectory, cartesian_space_waypoints, fraction);
 
     // Create objects to save in the reach record
     geometry_msgs::msg::Pose tgt_pose;
@@ -332,25 +377,19 @@ void ReachStudy::runInitialReachStudy() {
       geometry_msgs::msg::PoseStamped tgt_pose_stamped;
       tgt_pose_stamped.pose = tgt_pose;
       tgt_pose_stamped.header.frame_id = cloud_msg_.header.frame_id;
-      ps_pub_->publish(tgt_pose_stamped);
 
-      std::map<std::string, double> robot_configuration;
-      // create map
-      std::transform(
-          goal_state.name.begin(), goal_state.name.end(), solution.begin(),
-          std::inserter(robot_configuration, robot_configuration.end()),
-          [](std::string &jname, double jvalue) {
-            return std::make_pair(jname, jvalue);
-          });
-
-      display_->updateRobotPose(robot_configuration);
+      // fill the goal state
       goal_state.position = solution;
+
       auto msg = makeRecord(std::to_string(i), true, tgt_pose, seed_state,
-                            goal_state, *score);
+                            goal_state, *score, sp_.ik_solver_config_name,
+                            cartesian_space_waypoints, joint_space_trajectory,
+                            fraction);
       db_->put(msg);
     } else {
-      auto msg = makeRecord(std::to_string(i), false, tgt_pose, seed_state,
-                            goal_state, 0.0);
+      auto msg =
+          makeRecord(std::to_string(i), false, tgt_pose, seed_state, goal_state,
+                     0.0, sp_.ik_solver_config_name, {}, {}, fraction);
       db_->put(msg);
     }
 
@@ -396,9 +435,8 @@ void ReachStudy::optimizeReachStudyResults() {
       reach_msgs::msg::ReachRecord msg = it->second;
       if (msg.reached) {
         NeighborReachResult result = reachNeighborsDirect(
-            db_, msg, ik_solver_, sp_.optimization.radius);  //, search_tree_);
+            db_, msg, ik_solver_, sp_.optimization.radius);  // search_tree_);
       }
-
       // Print function progress
       current_counter++;
       utils::integerProgressPrinter(current_counter, previous_pct, cloud_size);
@@ -427,16 +465,19 @@ void ReachStudy::getAverageNeighborsCount() {
 
   std::atomic<int> current_counter, previous_pct, neighbor_count;
   current_counter = previous_pct = neighbor_count = 0;
-  std::atomic<double> total_joint_distance;
+  std::atomic<double> total_joint_distance = 0.0;
   const int total = db_->size();
   // Iterate
-#pragma parallel for
   for (auto it = db_->begin(); it != db_->end(); ++it) {
     reach_msgs::msg::ReachRecord msg = it->second;
     if (msg.reached) {
-      NeighborReachResult result;
-      reachNeighborsRecursive(db_, msg, ik_solver_, sp_.optimization.radius,
-                              result, search_tree_);
+      //      NeighborReachResult result;
+      //      // TODO(livanov93): find out why using search_tree_ throttles down
+      //      the loop reachNeighborsRecursive(db_, msg, ik_solver_,
+      //      sp_.optimization.radius,
+      //                              result);//, search_tree_);
+      NeighborReachResult result =
+          reachNeighborsDirect(db_, msg, ik_solver_, sp_.optimization.radius);
       neighbor_count += static_cast<int>(result.reached_pts.size() - 1);
       total_joint_distance = total_joint_distance + result.joint_distance;
     }
@@ -495,6 +536,44 @@ bool ReachStudy::compareDatabases() {
   }
 
   display_->compareDatabases(data);
+
+  return true;
+}
+
+bool ReachStudy::visualizeDatabases() {
+  // Add the newly created database to the list if it isn't already there
+  if (std::find(sp_.visualize_dbs.begin(), sp_.visualize_dbs.end(),
+                sp_.config_name) == sp_.visualize_dbs.end()) {
+    sp_.visualize_dbs.push_back(sp_.config_name);
+  }
+  // Create list of optimized database file names from the results folder
+  std::vector<std::string> db_filenames;
+  for (auto it = sp_.visualize_dbs.begin(); it != sp_.visualize_dbs.end();
+       ++it) {
+    db_filenames.push_back(dir_ + *it + "/" + OPT_SAVED_DB_NAME);
+  }
+
+  // Load databases to be compared
+  std::map<std::string, reach_msgs::msg::ReachDatabase> data;
+  for (size_t i = 0; i < db_filenames.size(); ++i) {
+    ReachDatabase db;
+    if (!db.load(db_filenames[i])) {
+      RCLCPP_ERROR(LOGGER, "Cannot load database at:\n %s",
+                   db_filenames[i].c_str());
+      continue;
+    }
+    data.emplace(sp_.visualize_dbs[i], db.toReachDatabaseMsg());
+  }
+
+  if (data.size() < 2) {
+    RCLCPP_ERROR(
+        LOGGER,
+        "Only %lu database(s) loaded; cannot compare fewer than 2 databases",
+        data.size());
+    return false;
+  }
+
+  display_->visualizeDatabases(data);
 
   return true;
 }

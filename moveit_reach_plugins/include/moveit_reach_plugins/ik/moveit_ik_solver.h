@@ -50,7 +50,12 @@ class MoveItIKSolver : public reach::plugins::IKSolverBase {
  public:
   MoveItIKSolver();
 
-  ~MoveItIKSolver() { eval_.reset(); }
+  ~MoveItIKSolver() {
+    eval_.reset();
+    model_.reset();
+    scene_pub_.reset();
+    scene_.reset();
+  }
 
   virtual bool initialize(
       std::string& name, rclcpp::Node::SharedPtr node,
@@ -58,16 +63,18 @@ class MoveItIKSolver : public reach::plugins::IKSolverBase {
 
   virtual std::optional<double> solveIKFromSeed(
       const Eigen::Isometry3d& target,
-      const std::map<std::string, double>& seed,
-      std::vector<double>& solution) override;
+      const std::map<std::string, double>& seed, std::vector<double>& solution,
+      std::vector<double>& joint_space_trajectory,
+      std::vector<double>& cartesian_space_waypoints,
+      double& fraction) override;
 
   virtual std::vector<std::string> getJointNames() const override;
 
- protected:
   bool isIKSolutionValid(moveit::core::RobotState* state,
                          const moveit::core::JointModelGroup* jmg,
                          const double* ik_solution) const;
 
+ protected:
   moveit::core::RobotModelConstPtr model_;
   planning_scene::PlanningScenePtr scene_;
   const moveit::core::JointModelGroup* jmg_;
