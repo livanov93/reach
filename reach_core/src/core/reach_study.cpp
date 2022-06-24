@@ -238,6 +238,8 @@ bool ReachStudy::run(const StudyParameters& sp) {
     optimizeReachStudyResults();
     db_->printResults();
     visualizer_->update();
+
+    // TODO(livanov93): add path based plugin run on optimized database
   } else {
     RCLCPP_INFO(LOGGER, "--------------------------------------------------");
     RCLCPP_INFO(LOGGER, "Optimized reach study database successfully loaded");
