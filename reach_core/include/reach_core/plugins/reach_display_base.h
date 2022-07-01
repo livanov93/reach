@@ -175,7 +175,7 @@ class DisplayBase {
     color[1] = 0.0;
     color[2] = 0.0;
     color[3] = 1.0;
-    boost::optional<std::vector<float>> arrow_color = color;
+    std::optional<std::vector<float>> arrow_color = color;
 
     // Create Rviz marker array
     visualization_msgs::msg::MarkerArray marker_array;

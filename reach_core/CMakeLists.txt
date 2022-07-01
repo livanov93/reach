@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(reach_core)
 
-add_compile_options(-std=c++14)
+add_compile_options(-std=c++20)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_ros REQUIRED)
@@ -62,7 +62,6 @@ add_library(${PROJECT_NAME}_plugins
 )
 target_link_libraries(${PROJECT_NAME}_plugins
   ${PCL_LIBRARIES}
-  ${rclcpp_LIBRARIES}
   Eigen3::Eigen
   ${PROJECT_NAME}_utils
 )
@@ -92,12 +91,13 @@ target_include_directories(${PROJECT_NAME}_utils
 )
 target_link_libraries(${PROJECT_NAME}_utils
   ${PCL_LIBRARIES}
-  ${rclcpp_LIBRARIES}
 )
 ament_target_dependencies(${PROJECT_NAME}_utils
   reach_msgs
   rclcpp
   visualization_msgs
+  pcl_conversions
+  tf2_eigen
 )
 
 

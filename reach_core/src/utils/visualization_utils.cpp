@@ -15,7 +15,7 @@
  */
 #include "reach_core/utils/visualization_utils.h"
 
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <pcl/features/moment_of_inertia_estimation.h>
 
@@ -29,7 +29,7 @@ namespace utils {
 visualization_msgs::msg::Marker makeVisual(
     const rclcpp::Node::SharedPtr& node, const reach_msgs::msg::ReachRecord& r,
     const std::string& frame, const double scale, const std::string& ns,
-    const boost::optional<std::vector<float>>& color) {
+    const std::optional<std::vector<float>>& color) {
   static int idx = 0;
 
   visualization_msgs::msg::Marker marker;
@@ -86,7 +86,7 @@ visualization_msgs::msg::Marker makeVisual(
 visualization_msgs::msg::Marker makeVisualTraj(
     const rclcpp::Node::SharedPtr& node, const reach_msgs::msg::ReachRecord& r,
     const std::string& frame, const double scale, const std::string& ns,
-    const boost::optional<std::vector<float>>& color) {
+    const std::optional<std::vector<float>>& color) {
   static int idx = 0;
 
   visualization_msgs::msg::Marker marker;

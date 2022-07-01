@@ -21,7 +21,7 @@
 #include <moveit/common_planning_interface_objects/common_objects.h>
 #include <moveit/planning_scene/planning_scene.h>
 // conversions
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <moveit/robot_state/conversions.h>
 
