@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(moveit_reach_plugins)
 
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++20)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
