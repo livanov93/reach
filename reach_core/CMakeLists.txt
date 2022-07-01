@@ -76,6 +76,7 @@ ament_target_dependencies(${PROJECT_NAME}_plugins
   interactive_markers
   visualization_msgs
   reach_msgs
+  moveit_core
 )
 pluginlib_export_plugin_description_file(reach_core plugin_description.xml)
 
