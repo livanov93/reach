@@ -32,7 +32,8 @@ class RobotReachStudyNode : public rclcpp::Node {
  public:
   bool getStudyParameters(reach::core::StudyParameters& sp) {
     // fetch parameteres
-    if (!this->get_parameter("config_name", sp_.config_name) ||
+    if (!this->get_parameter("tool_frame", sp_.tool_frame) ||
+        !this->get_parameter("config_name", sp_.config_name) ||
         !this->get_parameter("fixed_frame", sp_.fixed_frame) ||
         !this->get_parameter("results_package", sp_.results_package) ||
         !this->get_parameter("results_directory", sp_.results_directory) ||
@@ -103,6 +104,54 @@ class RobotReachStudyNode : public rclcpp::Node {
       this->get_parameter_or("visualize_dbs", sp_.visualize_dbs, {});
       this->get_parameter_or("invert_z_tool_rotation",
                              sp_.invert_z_tool_rotation, true);
+
+      // to do path generation or not
+      this->get_parameter_or("generate_paths", sp_.generate_paths, false);
+      this->get_parameter_or("path_generation_config.path_plugins", sp_.paths,
+                             {});
+      for (const auto& p : sp_.paths) {
+        std::string tmp_plugin_name;
+        std::string tmp_param_name =
+            "path_generation_config." + p + ".plugin_name";
+        this->get_parameter_or(tmp_param_name, tmp_plugin_name,
+                               std::string(""));
+        sp_.path_based_plugins.push_back(tmp_plugin_name);
+      }
+
+      this->get_parameter_or("path_generation_config.initial_source_db",
+                             sp_.initial_source_db, false);
+      this->get_parameter_or(
+          "path_generation_config.initial_source_robot_configurations",
+          sp_.initial_source_robot_configurations, false);
+
+      if (sp_.generate_paths && !sp_.initial_source_db &&
+          !sp_.initial_source_robot_configurations) {
+        RCLCPP_ERROR(rclcpp::get_logger("robot_reach_study_node"),
+                     "No source defined for path generation!");
+        return false;
+      }
+
+      if (!this->get_parameter("path_generation_config.db.config_name",
+                               sp_.db_config_name) ||
+          !this->get_parameter("path_generation_config.db.package",
+                               sp_.db_package) ||
+          !this->get_parameter("path_generation_config.db.directory",
+                               sp_.db_dir) ||
+          !this->get_parameter("path_generation_config.db.name", sp_.db_name)) {
+        return false;
+      }
+
+      if (!this->get_parameter(
+              "path_generation_config.robot_configurations.name",
+              sp_.robot_configurations_name) ||
+          !this->get_parameter(
+              "path_generation_config.robot_configurations.package",
+              sp_.robot_configurations_package) ||
+          !this->get_parameter(
+              "path_generation_config.robot_configurations.directory",
+              sp_.robot_configurations_dir)) {
+        return false;
+      }
 
       if (std::find(sp_.visualize_dbs.begin(), sp_.visualize_dbs.end(), "") !=
           sp_.visualize_dbs.end()) {

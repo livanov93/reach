@@ -1,0 +1,35 @@
+# starting robot configuration when path generation source is not database
+robot_configurations:
+  - config_1
+  - config_2
+  - config_3
+
+config_1:
+  joint_b: 0.0
+  joint_e: 0.0
+  joint_l: 0.0
+  joint_r: 0.0
+  joint_s: 0.0
+  joint_t: 0.0
+  joint_u: 0.0
+
+config_2:
+  joint_b: 0.1
+  joint_e: 0.1
+  joint_l: 0.1
+  joint_r: 0.1
+  joint_s: 0.1
+  joint_t: 0.1
+  joint_u: 0.1
+
+config_3:
+  joint_b: -0.1
+  joint_e: -0.1
+  joint_l: -0.1
+  joint_r: -0.1
+  joint_s: -0.1
+  joint_t: -0.1
+  joint_u: -0.1
+
+
+

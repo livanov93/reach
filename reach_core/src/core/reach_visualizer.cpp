@@ -87,13 +87,8 @@ void ReachVisualizer::reSolveIKCB(
 
     // Re-solve IK at the selected marker
     std::vector<double> goal_pose;
-    std::vector<double> cartesian_space_waypoints;
-    std::vector<double> joint_space_trajectory;
-    double fraction;
-    moveit_msgs::msg::RobotTrajectory moveit_trajectory;
-    std::optional<double> score = solver_->solveIKFromSeed(
-        target, seed_map, goal_pose, joint_space_trajectory,
-        cartesian_space_waypoints, fraction, moveit_trajectory);
+    std::optional<double> score =
+        solver_->solveIKFromSeed(target, seed_map, goal_pose);
 
     // Update the database if the IK solution was valid
     if (score) {
@@ -102,16 +97,13 @@ void ReachVisualizer::reSolveIKCB(
       lookup->reached = true;
       lookup->score = *score;
       lookup->goal_state.position = goal_pose;
-      lookup->joint_space_trajectory = joint_space_trajectory;
-      lookup->waypoints = cartesian_space_waypoints;
-      lookup->retrieved_fraction = fraction;
-      lookup->moveit_trajectory = moveit_trajectory;
 
       // Update the interactive marker server
       display_->updateInteractiveMarker(*lookup);
       display_->updateRobotPose(jointStateMsgToMap(lookup->goal_state));
-      display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
-          joint_space_trajectory, lookup->goal_state.name));
+
+      //      display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
+      //          joint_space_trajectory, lookup->goal_state.name));
 
       // Update the database
       db_->put(*lookup);
@@ -131,8 +123,8 @@ void ReachVisualizer::showResultCB(
   auto lookup = db_->get(fb->marker_name);
   if (lookup) {
     display_->updateRobotPose(jointStateMsgToMap(lookup->goal_state));
-    display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
-        lookup->joint_space_trajectory, lookup->goal_state.name));
+    //    display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
+    //        lookup->joint_space_trajectory, lookup->goal_state.name));
   } else {
     RCLCPP_ERROR_STREAM(LOGGER,
                         "Record '" << fb->marker_name

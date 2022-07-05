@@ -30,6 +30,9 @@
 #include <reach_msgs/msg/reach_record.hpp>
 #include <reach_msgs/srv/load_point_cloud.hpp>
 
+// yaml stuff
+#include <yaml-cpp/yaml.h>
+
 constexpr char SAMPLE_MESH_SRV_TOPIC[] = "sample_mesh";
 const static double SRV_TIMEOUT = 5.0;
 constexpr char INPUT_CLOUD_TOPIC[] = "input_cloud";
@@ -44,13 +47,17 @@ const rclcpp::Logger LOGGER = rclcpp::get_logger("reach_core.reach_visualizer");
 constexpr char PACKAGE[] = "reach_core";
 constexpr char IK_BASE_CLASS[] = "reach::plugins::IKSolverBase";
 constexpr char DISPLAY_BASE_CLASS[] = "reach::plugins::DisplayBase";
+constexpr char PATH_BASE_CLASS[] = "reach::plugins::PathBase";
 
 ReachStudy::ReachStudy(const rclcpp::Node::SharedPtr node)
     : node_(node),
       cloud_(new pcl::PointCloud<pcl::PointNormal>()),
       db_(new ReachDatabase()),
+      paths_db_(new ReachDatabase()),
       solver_loader_(PACKAGE, IK_BASE_CLASS),
-      display_loader_(PACKAGE, DISPLAY_BASE_CLASS) {}
+      display_loader_(PACKAGE, DISPLAY_BASE_CLASS),
+      path_generator_loader_(PACKAGE, PATH_BASE_CLASS) {}
+
 ReachStudy::~ReachStudy() {
   ik_solver_.reset();
   display_.reset();
@@ -59,7 +66,10 @@ ReachStudy::~ReachStudy() {
   cloud_.reset();
   node_.reset();
   model_.reset();
-  ps_pub_.reset();
+  paths_db_.reset();
+  for (size_t i = 0; i < path_generators_.size(); ++i) {
+    path_generators_[i].reset();
+  }
 }
 
 bool ReachStudy::initializeStudy(const StudyParameters& sp) {
@@ -69,8 +79,7 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
   model_ = moveit::planning_interface::getSharedRobotModel(node_,
                                                            "robot_description");
 
-  ps_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>(
-      "pose_stamped", 1);
+  // expose information if analysis has finished
   done_pub_ = node_->create_publisher<std_msgs::msg::Empty>("analysis_done", 1);
 
   try {
@@ -177,9 +186,7 @@ bool ReachStudy::run(const StudyParameters& sp) {
       db_->printResults();
       visualizer_->update();
       // check if we don't have to optimize
-      if (sp.run_initial_study_only ||
-          (sp.ik_solver_config_name ==
-           "moveit_reach_plugins/ik/PlannerBasedIKSolver")) {
+      if (sp.run_initial_study_only) {
         done_pub_->publish(std_msgs::msg::Empty());
         while (rclcpp::ok() && sp_.keep_running) {
           // keep it running
@@ -206,14 +213,14 @@ bool ReachStudy::run(const StudyParameters& sp) {
       //  when new type of plugin is created motion generation will be option
       //  that is doable on existing databases created by other ik solvers and
       //  optimization procedures - ugly but...
-      if (sp.run_initial_study_only ||
-          (sp.ik_solver_config_name ==
-           "moveit_reach_plugins/ik/PlannerBasedIKSolver")) {
+      if (sp.run_initial_study_only) {
         done_pub_->publish(std_msgs::msg::Empty());
+
         while (rclcpp::ok() && sp_.keep_running) {
           // keep it running
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+
         db_->calculateResults();
         db_->save(results_dir_ + SAVED_DB_NAME);
         return true;
@@ -247,6 +254,15 @@ bool ReachStudy::run(const StudyParameters& sp) {
 
     // TODO(livanov93): add here run of planning based plugin - add new type of
     //  plugin
+    if (sp_.generate_paths) {
+      if (!initializePathGeneration(sp_)) {
+        RCLCPP_ERROR(LOGGER, "Path Generation could not be initialized");
+        return false;
+      }
+
+      // path generation
+      generatePaths();
+    }
 
     db_->printResults();
     visualizer_->update();
@@ -281,6 +297,7 @@ bool ReachStudy::run(const StudyParameters& sp) {
     }
   }
 
+  // analysis done information sharing
   done_pub_->publish(std_msgs::msg::Empty());
 
   while (rclcpp::ok() && sp_.keep_running) {
@@ -291,6 +308,9 @@ bool ReachStudy::run(const StudyParameters& sp) {
   ik_solver_.reset();
   display_.reset();
   visualizer_.reset();
+  for (size_t i = 0; i < path_generators_.size(); ++i) {
+    path_generators_[i].reset();
+  }
 
   return true;
 }
@@ -359,138 +379,59 @@ void ReachStudy::runInitialReachStudy() {
   current_counter = previous_pct = 0;
   const int cloud_size = static_cast<int>(cloud_->points.size());
 
-  if (sp_.ik_solver_config_name !=
-      "moveit_reach_plugins/ik/PlannerBasedIKSolver") {
 #pragma omp parallel for
-    for (int i = 0; i < cloud_size; ++i) {
-      // Get pose from point cloud array
-      const pcl::PointNormal& pt = cloud_->points[i];
-      Eigen::Isometry3d tgt_frame;
-      tgt_frame =
-          utils::createFrame(pt.getArray3fMap(), pt.getNormalVector3fMap());
-      if (sp_.invert_z_tool_rotation) {
-        tgt_frame = tgt_frame * tool_z_rot * tool_z_rot_align;
-      } else {
-        tgt_frame = tgt_frame * tool_z_rot;
-      }
-
-      // Get the seed position
-      sensor_msgs::msg::JointState seed_state;
-      seed_state.name = ik_solver_->getJointNames();
-      if (seed_state.name.size() != sp_.initial_seed_state.size()) {
-        seed_state.position = std::vector<double>(seed_state.name.size(), 0.0);
-      } else {
-        seed_state.position = sp_.initial_seed_state;
-      }
-
-      // Solve IK
-      std::vector<double> solution;
-      std::vector<double> cartesian_space_waypoints;
-      std::vector<double> joint_space_trajectory;
-      moveit_msgs::msg::RobotTrajectory moveit_trajectory;
-      double fraction;
-      std::optional<double> score = ik_solver_->solveIKFromSeed(
-          tgt_frame, jointStateMsgToMap(seed_state), solution,
-          joint_space_trajectory, cartesian_space_waypoints, fraction,
-          moveit_trajectory);
-
-      // Create objects to save in the reach record
-      geometry_msgs::msg::Pose tgt_pose;
-      tgt_pose = tf2::toMsg(tgt_frame);
-
-      sensor_msgs::msg::JointState goal_state(seed_state);
-
-      if (score) {
-        geometry_msgs::msg::PoseStamped tgt_pose_stamped;
-        tgt_pose_stamped.pose = tgt_pose;
-        tgt_pose_stamped.header.frame_id = cloud_msg_.header.frame_id;
-
-        // fill the goal state
-        goal_state.position = solution;
-
-        auto msg = makeRecord(std::to_string(i), true, tgt_pose, seed_state,
-                              goal_state, *score, sp_.ik_solver_config_name,
-                              cartesian_space_waypoints, joint_space_trajectory,
-                              fraction, moveit_trajectory);
-        db_->put(msg);
-      } else {
-        auto msg = makeRecord(std::to_string(i), false, tgt_pose, seed_state,
-                              goal_state, 0.0, sp_.ik_solver_config_name, {},
-                              {}, fraction, moveit_trajectory);
-        db_->put(msg);
-      }
-
-      // Print function progress
-      current_counter++;
-      utils::integerProgressPrinter(current_counter, previous_pct, cloud_size);
+  for (int i = 0; i < cloud_size; ++i) {
+    // Get pose from point cloud array
+    const pcl::PointNormal& pt = cloud_->points[i];
+    Eigen::Isometry3d tgt_frame;
+    tgt_frame =
+        utils::createFrame(pt.getArray3fMap(), pt.getNormalVector3fMap());
+    if (sp_.invert_z_tool_rotation) {
+      tgt_frame = tgt_frame * tool_z_rot * tool_z_rot_align;
+    } else {
+      tgt_frame = tgt_frame * tool_z_rot;
     }
-  } else {
-    // if planner based ik solver is used don't use omp
-    // TODO(livanov93): this is ugly - find other way, potentially create
-    //  another type of plugin which will do motion generation on existing
-    //  databases created by other ik solvers
-    for (int i = 0; i < cloud_size; ++i) {
-      // Get pose from point cloud array
-      const pcl::PointNormal& pt = cloud_->points[i];
-      Eigen::Isometry3d tgt_frame;
-      tgt_frame =
-          utils::createFrame(pt.getArray3fMap(), pt.getNormalVector3fMap());
-      if (sp_.invert_z_tool_rotation) {
-        tgt_frame = tgt_frame * tool_z_rot * tool_z_rot_align;
-      } else {
-        tgt_frame = tgt_frame * tool_z_rot;
-      }
 
-      // Get the seed position
-      sensor_msgs::msg::JointState seed_state;
-      seed_state.name = ik_solver_->getJointNames();
-      if (seed_state.name.size() != sp_.initial_seed_state.size()) {
-        seed_state.position = std::vector<double>(seed_state.name.size(), 0.0);
-      } else {
-        seed_state.position = sp_.initial_seed_state;
-      }
-
-      // Solve IK
-      std::vector<double> solution;
-      std::vector<double> cartesian_space_waypoints;
-      std::vector<double> joint_space_trajectory;
-      double fraction;
-      moveit_msgs::msg::RobotTrajectory moveit_trajectory;
-      std::optional<double> score = ik_solver_->solveIKFromSeed(
-          tgt_frame, jointStateMsgToMap(seed_state), solution,
-          joint_space_trajectory, cartesian_space_waypoints, fraction,
-          moveit_trajectory);
-
-      // Create objects to save in the reach record
-      geometry_msgs::msg::Pose tgt_pose;
-      tgt_pose = tf2::toMsg(tgt_frame);
-
-      sensor_msgs::msg::JointState goal_state(seed_state);
-
-      if (score) {
-        geometry_msgs::msg::PoseStamped tgt_pose_stamped;
-        tgt_pose_stamped.pose = tgt_pose;
-        tgt_pose_stamped.header.frame_id = cloud_msg_.header.frame_id;
-
-        // fill the goal state
-        goal_state.position = solution;
-
-        auto msg = makeRecord(std::to_string(i), true, tgt_pose, seed_state,
-                              goal_state, *score, sp_.ik_solver_config_name,
-                              cartesian_space_waypoints, joint_space_trajectory,
-                              fraction, moveit_trajectory);
-        db_->put(msg);
-      } else {
-        auto msg = makeRecord(std::to_string(i), false, tgt_pose, seed_state,
-                              goal_state, 0.0, sp_.ik_solver_config_name, {},
-                              {}, fraction, moveit_trajectory);
-        db_->put(msg);
-      }
-
-      // Print function progress
-      current_counter++;
-      utils::integerProgressPrinter(current_counter, previous_pct, cloud_size);
+    // Get the seed position
+    sensor_msgs::msg::JointState seed_state;
+    seed_state.name = ik_solver_->getJointNames();
+    if (seed_state.name.size() != sp_.initial_seed_state.size()) {
+      seed_state.position = std::vector<double>(seed_state.name.size(), 0.0);
+    } else {
+      seed_state.position = sp_.initial_seed_state;
     }
+
+    // Solve IK
+    std::vector<double> solution;
+    std::optional<double> score = ik_solver_->solveIKFromSeed(
+        tgt_frame, jointStateMsgToMap(seed_state), solution);
+
+    // Create objects to save in the reach record
+    geometry_msgs::msg::Pose tgt_pose;
+    tgt_pose = tf2::toMsg(tgt_frame);
+
+    sensor_msgs::msg::JointState goal_state(seed_state);
+
+    if (score) {
+      geometry_msgs::msg::PoseStamped tgt_pose_stamped;
+      tgt_pose_stamped.pose = tgt_pose;
+      tgt_pose_stamped.header.frame_id = cloud_msg_.header.frame_id;
+
+      // fill the goal state
+      goal_state.position = solution;
+
+      auto msg = makeRecord(std::to_string(i), true, tgt_pose, seed_state,
+                            goal_state, *score);
+      db_->put(msg);
+    } else {
+      auto msg = makeRecord(std::to_string(i), false, tgt_pose, seed_state,
+                            goal_state, 0.0);
+      db_->put(msg);
+    }
+
+    // Print function progress
+    current_counter++;
+    utils::integerProgressPrinter(current_counter, previous_pct, cloud_size);
   }
 
   // Save the results of the reach study to a database that we can query later
@@ -671,6 +612,131 @@ bool ReachStudy::visualizeDatabases() {
   display_->visualizeDatabases(data);
 
   return true;
+}
+
+bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
+  // create instances
+  path_generators_.resize(sp.paths.size());
+  for (size_t i = 0; i < sp.paths.size(); ++i) {
+    path_generators_[i] =
+        path_generator_loader_.createSharedInstance(sp.path_based_plugins[i]);
+    if (!path_generators_[i]->initialize(sp.paths[i], node_, model_)) {
+      RCLCPP_ERROR(LOGGER, "Could not initialize '%s' '%s'",
+                   sp.paths[i].c_str(), sp.path_based_plugins[i].c_str());
+      return false;
+    }
+  }
+
+  if (sp.initial_source_db) {
+    paths_path_ = ament_index_cpp::get_package_share_directory(sp.db_package) +
+                  "/" + sp.db_dir + "/" + sp.db_config_name + "/" + sp.db_name;
+    if (!std::filesystem::exists(paths_path_)) {
+      return false;
+    } else {
+      bool loaded = paths_db_->load(paths_path_);
+      if (!loaded) return false;
+    }
+  } else if (sp.initial_source_robot_configurations) {
+    std::string yaml_path = ament_index_cpp::get_package_share_directory(
+                                sp.robot_configurations_package) +
+                            "/" + sp.robot_configurations_dir + "/" +
+                            sp.robot_configurations_name;
+    // check if yaml exists
+    if (!std::filesystem::exists(yaml_path)) {
+      return false;
+    }
+    // load yaml
+    YAML::Node config = YAML::LoadFile(yaml_path);
+    for (const auto& robot_configuration :
+         config["robot_configurations"].as<std::vector<std::string>>()) {
+      robot_configurations_[robot_configuration] =
+          config[robot_configuration].as<std::map<std::string, double>>();
+
+      // initialize target, seed state and goal state
+      reach_msgs::msg::ReachRecord r;
+      {
+        moveit::core::RobotState rs(model_);
+        auto jmg = model_->getJointModelGroup(sp_.planning_group);
+        if (!jmg) {
+          RCLCPP_ERROR_STREAM(LOGGER, "Failed to get joint model group for '"
+                                          << sp_.planning_group << "'");
+          return false;
+        }
+        std::vector<double> start_state_subset;
+        if (!transcribeInputMap(robot_configurations_[robot_configuration],
+                                jmg->getJointModelNames(),
+                                start_state_subset)) {
+          return false;
+        }
+        rs.setJointGroupPositions(jmg, start_state_subset);
+        r.id = robot_configuration;
+        r.goal =
+            tf2::toMsg(rs.getGlobalLinkTransform(sp_.fixed_frame).inverse() *
+                       rs.getGlobalLinkTransform(sp_.tool_frame));
+        r.goal_state =
+            mapToJointStateMsg(robot_configurations_[robot_configuration]);
+        r.seed_state =
+            mapToJointStateMsg(robot_configurations_[robot_configuration]);
+      }
+      paths_db_->put(r);
+    }
+
+    // create database
+    std::string tmp_db_path =
+        ament_index_cpp::get_package_share_directory(sp.db_package) + "/" +
+        sp.db_dir + "/" + sp.db_config_name + "/";
+    if (!std::filesystem::exists(tmp_db_path)) {
+      std::filesystem::path path(tmp_db_path.c_str());
+      std::filesystem::create_directories(path);
+    }
+    paths_path_ = tmp_db_path + sp.db_name;
+    // save database
+    paths_db_->save(paths_path_);
+
+  } else {
+    paths_db_ = nullptr;
+    return false;
+  }
+
+  return true;
+}
+
+void ReachStudy::generatePaths() {
+  // for each record
+  for (auto it = paths_db_->begin(); it != paths_db_->end(); ++it) {
+    // get the whole record to update it with paths
+    reach_msgs::msg::ReachRecord r = it->second;
+    if (r.reached) {
+      // get target from db
+      auto start_state = jointStateMsgToMap(r.goal_state);
+      std::map<std::string, double> end_state;
+      double fraction;
+      moveit_msgs::msg::RobotTrajectory trajectory;
+      bool total_score_ok = false;
+
+      // for each path generator
+      for (size_t i = 0; i < path_generators_.size(); ++i) {
+        std::optional<double> score = path_generators_[i]->solvePath(
+            start_state, end_state, fraction, trajectory);
+
+        // check if there is score
+        if (score) {
+          total_score_ok = true;
+          // append trajectory
+          // append fraction
+          // create complex data structure to hold for each trajectory:
+          // start state, end state, fraction, trajectory
+
+          // prepare for next path generator
+          start_state = end_state;
+        } else {
+          total_score_ok = false;
+          break;
+        }
+      }
+      paths_db_->put(r);
+    }
+  }
 }
 
 }  // namespace core

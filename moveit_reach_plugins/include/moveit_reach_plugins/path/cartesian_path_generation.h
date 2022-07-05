@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Southwest Research Institute
+ * Copyright 2022 PickNik, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MOVEIT_REACH_PLUGINS_IK_MOVEIT_IK_SOLVER_H
-#define MOVEIT_REACH_PLUGINS_IK_MOVEIT_IK_SOLVER_H
+/* Authors: Lovro Ivanov, @livanov93
+   Desc:
+*/
+#ifndef MOVEIT_REACH_PLUGINS_PATH_CARTESIAN_PATH_GENERATION_H
+#define MOVEIT_REACH_PLUGINS_PATH_CARTESIAN_PATH_GENERATION_H
 
 #include <pluginlib/class_loader.hpp>
-#include <reach_core/plugins/evaluation_base.h>
-#include <reach_core/plugins/ik_solver_base.h>
+#include <reach_core/plugins/path_base.h>
 
 // PlanningScene
 #include <moveit_msgs/msg/planning_scene.hpp>
+
+// cartesian interpolator include
+#include "tf2_eigen/tf2_eigen.h"
+
+#include <moveit/robot_state/cartesian_interpolator.h>
+#include <moveit/robot_trajectory/robot_trajectory.h>
 
 namespace planning_scene {
 class PlanningScene;
@@ -29,31 +37,23 @@ typedef std::shared_ptr<PlanningScene> PlanningScenePtr;
 }  // namespace planning_scene
 
 namespace moveit_reach_plugins {
-namespace {
-const rclcpp::Logger LOGGER =
-    rclcpp::get_logger("moveit_reach_plugins.MoveItIKSolver");
-}
-namespace ik {
 
-class MoveItIKSolver : public reach::plugins::IKSolverBase {
+namespace path {
+
+class CartesianPathGeneration : public reach::plugins::PathBase {
  public:
-  MoveItIKSolver();
+  CartesianPathGeneration();
 
-  ~MoveItIKSolver() {
-    eval_.reset();
-    model_.reset();
-    scene_pub_.reset();
-    scene_.reset();
-  }
+  ~CartesianPathGeneration() {}
 
   virtual bool initialize(
-      std::string& name, rclcpp::Node::SharedPtr node,
+      const std::string& name, rclcpp::Node::SharedPtr node,
       const std::shared_ptr<const moveit::core::RobotModel> model) override;
 
-  virtual std::optional<double> solveIKFromSeed(
-      const Eigen::Isometry3d& target,
-      const std::map<std::string, double>& seed,
-      std::vector<double>& solution) override;
+  virtual std::optional<double> solvePath(
+      const std::map<std::string, double>& start_state,
+      std::map<std::string, double>& end_state, double& fraction,
+      moveit_msgs::msg::RobotTrajectory& moveit_trajectory) override;
 
   virtual std::vector<std::string> getJointNames() const override;
 
@@ -65,21 +65,26 @@ class MoveItIKSolver : public reach::plugins::IKSolverBase {
   moveit::core::RobotModelConstPtr model_;
   planning_scene::PlanningScenePtr scene_;
   const moveit::core::JointModelGroup* jmg_;
+  std::string name_;
 
-  pluginlib::ClassLoader<reach::plugins::EvaluationBase> class_loader_;
-  reach::plugins::EvaluationBasePtr eval_;
-
-  // parameters
-  double distance_threshold_;
+  // distance to retrieve from ik solution in [m]
+  double retrieval_path_length_;
+  double jump_threshold_;
+  double max_eef_step_;
+  std::string tool_frame_;
+  double max_velocity_scaling_factor_;
+  double max_acceleration_scaling_factor_;
   std::string collision_mesh_package_;
-  std::string collision_mesh_filename_path_;
-  std::string evaluation_plugin_name_;
   std::string collision_mesh_frame_;
-  std::vector<std::string> touch_links_;
-  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr scene_pub_;
+  // collision checking
+  double distance_threshold_;
+
+  // transformations
+  Eigen::Isometry3d global_transformation_;
+  Eigen::Isometry3d tool_transformation_;
 };
 
-}  // namespace ik
+}  // namespace path
 }  // namespace moveit_reach_plugins
 
-#endif  // MOVEIT_REACH_PLUGINS_IK_MOVEIT_IK_SOLVER_H
+#endif  // MOVEIT_REACH_PLUGINS_PATH_CARTESIAN_PATH_GENERATION_H

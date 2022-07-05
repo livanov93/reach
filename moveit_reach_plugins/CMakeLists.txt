@@ -76,8 +76,8 @@ pluginlib_export_plugin_description_file(reach_core eval_plugin_description.xml)
 add_library(ik_solver_plugins
   src/ik/moveit_ik_solver.cpp
   src/ik/discretized_moveit_ik_solver.cpp
-  src/ik/cartesian_retrieval_ik_solver.cpp
-  src/ik/planner_based_ik_solver.cpp
+#  src/ik/cartesian_retrieval_ik_solver.cpp
+#  src/ik/planner_based_ik_solver.cpp
 )
 target_include_directories(ik_solver_plugins
   PUBLIC
@@ -90,7 +90,6 @@ target_link_libraries(ik_solver_plugins
 ament_target_dependencies(ik_solver_plugins
   moveit_ros_planning_interface
   geometric_shapes
-#  reach_core
   pluginlib
   rclcpp
   tf2_eigen
@@ -113,6 +112,27 @@ target_link_libraries(reach_display_plugins
   ik_solver_plugins
 )
 pluginlib_export_plugin_description_file(reach_core display_plugin_description.xml)
+
+# MoveIt Reach Path Plugin
+add_library(path_plugins
+  src/path/cartesian_path_generation.cpp
+)
+target_include_directories(path_plugins
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(path_plugins
+  ${PROJECT_NAME}_utils
+)
+ament_target_dependencies(path_plugins
+  moveit_ros_planning_interface
+  geometric_shapes
+  pluginlib
+  rclcpp
+  tf2_eigen
+)
+pluginlib_export_plugin_description_file(reach_core path_plugin_description.xml)
 
 # IK Plugin Test
 #add_executable(ik_plugin_test

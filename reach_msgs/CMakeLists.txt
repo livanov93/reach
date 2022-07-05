@@ -31,6 +31,7 @@ endforeach()
 set(msg_files
     "msg/ReachRecord.msg"
     "msg/ReachDatabase.msg"
+    "msg/ReachPath.msg"
 )
 
 set(srv_files

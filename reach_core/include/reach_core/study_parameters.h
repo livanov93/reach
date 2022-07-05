@@ -45,8 +45,8 @@ struct StudyOptimization {
  * reach study
  */
 struct StudyParameters {
-  //  XmlRpc::XmlRpcValue ik_solver_config;
-  //  XmlRpc::XmlRpcValue display_config;
+  std::string tool_frame;
+
   std::string ik_solver_config_name;
   std::string display_config_name;
   StudyOptimization optimization;
@@ -66,6 +66,22 @@ struct StudyParameters {
   std::vector<double> initial_seed_state;
   bool keep_running;
   bool invert_z_tool_rotation;
+
+  // path generator stuff
+  bool generate_paths;
+  bool initial_source_db;
+  bool initial_source_robot_configurations;
+  std::vector<std::string> paths;
+  std::vector<std::string> path_based_plugins;
+  // initial source db
+  std::string db_name;
+  std::string db_package;
+  std::string db_dir;
+  std::string db_config_name;
+  // initial source robot configs
+  std::string robot_configurations_name;
+  std::string robot_configurations_package;
+  std::string robot_configurations_dir;
 };
 
 }  // namespace core

@@ -49,10 +49,7 @@ reach_msgs::msg::ReachRecord makeRecord(
     const std::string& id, const bool reached,
     const geometry_msgs::msg::Pose& goal,
     const sensor_msgs::msg::JointState& seed_state,
-    const sensor_msgs::msg::JointState& goal_state, const double score,
-    const std::string& ik_solver_name, const std::vector<double>& waypoints,
-    const std::vector<double>& trajectory, double retrieved_fraction,
-    const moveit_msgs::msg::RobotTrajectory& moveit_trajectory) {
+    const sensor_msgs::msg::JointState& goal_state, const double score) {
   reach_msgs::msg::ReachRecord r;
   r.id = id;
   r.goal = goal;
@@ -60,11 +57,6 @@ reach_msgs::msg::ReachRecord makeRecord(
   r.seed_state = seed_state;
   r.goal_state = goal_state;
   r.score = score;
-  r.retrieved_fraction = retrieved_fraction;
-  r.ik_solver = ik_solver_name;
-  r.joint_space_trajectory = trajectory;
-  r.waypoints = waypoints;
-  r.moveit_trajectory = moveit_trajectory;
   return r;
 }
 
@@ -73,6 +65,16 @@ std::map<std::string, double> jointStateMsgToMap(
   std::map<std::string, double> out;
   for (std::size_t i = 0; i < state.name.size(); ++i) {
     out.emplace(state.name[i], state.position[i]);
+  }
+  return out;
+}
+
+sensor_msgs::msg::JointState mapToJointStateMsg(
+    const std::map<std::string, double>& state) {
+  sensor_msgs::msg::JointState out;
+  for (auto it = state.begin(); it != state.end(); ++it) {
+    out.name.push_back(it->first);
+    out.position.push_back(it->second);
   }
   return out;
 }
