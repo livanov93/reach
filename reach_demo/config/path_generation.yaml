@@ -7,6 +7,16 @@ robot_reach_study_node:
     object_frame: "reach_object"
     tool_frame: "tcp"
 
+    # pcd stuff
+    pcd_package: "reach_demo"
+    pcd_filename_path: "config/part.pcd"
+
+    # average neighbor calc
+    get_avg_neighbor_count: false
+
+    # db comparison
+    compare_dbs: [ "" ]
+
     # database stuff
     config_name: "demo_config"
     results_package: "reach_demo"
@@ -17,6 +27,7 @@ robot_reach_study_node:
 
     visualize_results: true
     keep_running: true
+    run_initial_study_only: false
 
     optimization:
       radius: 0.2
@@ -25,12 +36,7 @@ robot_reach_study_node:
 
     ik_solver_config:
       name: "moveit_reach_plugins/ik/MoveItIKSolver"
-      max_velocity_scaling_factor: 0.5
-      max_acceleration_scaling_factor: 0.5
-      retrieval_distance: 0.2
       tool_frame: "tcp"
-      max_eef_step: 0.005
-      jump_threshold: 0.1 # cca 5 degrees
       distance_threshold: 0.0
       planning_group: "manipulator"
       collision_mesh_package: "package://reach_demo/config/part.ply"
