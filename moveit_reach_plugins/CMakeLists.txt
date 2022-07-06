@@ -156,6 +156,7 @@ install(
     evaluation_plugins
     ik_solver_plugins
     reach_display_plugins
+    path_plugins
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -171,6 +172,7 @@ ament_export_libraries(
   evaluation_plugins
   ik_solver_plugins
   reach_display_plugins
+  path_plugins
 )
 
 ament_export_include_directories(

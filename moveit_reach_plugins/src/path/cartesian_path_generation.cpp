@@ -194,17 +194,17 @@ bool CartesianPathGeneration::initialize(
       return false;
     }
 
-    if (!node->get_parameter(param_prefix + "collision_mesh_package",
+    if (!node->get_parameter("path_generation_config.collision_mesh_package",
                              collision_mesh_package_)) {
       RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
-                   (param_prefix + "collision_mesh_package").c_str());
+                   "path_generation_config.collision_mesh_package");
       return false;
     }
 
-    if (!node->get_parameter(param_prefix + "collision_mesh_frame",
+    if (!node->get_parameter("path_generation_config.collision_mesh_frame",
                              collision_mesh_frame_)) {
       RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
-                   (param_prefix + "collision_mesh_frame").c_str());
+                   "path_generation_config.collision_mesh_frame");
       return false;
     }
 

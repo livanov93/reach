@@ -1,5 +1,5 @@
 <!-- IK Plugins -->
-<library path="ik_solver_plugins">
+<library path="path_plugins">
   <!-- MoveIt IK Solver -->
   <class name="moveit_reach_plugins/path/CartesianPathGeneration" type="moveit_reach_plugins::path::CartesianPathGeneration" base_class_type="reach::plugins::PathBase">
     <description>
