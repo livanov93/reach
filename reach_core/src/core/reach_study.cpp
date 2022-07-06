@@ -41,9 +41,7 @@ constexpr char OPT_SAVED_DB_NAME[] = "optimized_reach.db";
 
 namespace reach {
 namespace core {
-namespace {
-const rclcpp::Logger LOGGER = rclcpp::get_logger("reach_core.reach_visualizer");
-}
+
 constexpr char PACKAGE[] = "reach_core";
 constexpr char IK_BASE_CLASS[] = "reach::plugins::IKSolverBase";
 constexpr char DISPLAY_BASE_CLASS[] = "reach::plugins::DisplayBase";
@@ -86,7 +84,7 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
     ik_solver_ = solver_loader_.createSharedInstance(sp_.ik_solver_config_name);
     display_ = display_loader_.createSharedInstance(sp_.display_config_name);
   } catch (const pluginlib::PluginlibException& ex) {
-    RCLCPP_ERROR(LOGGER,
+    RCLCPP_ERROR(node_->get_logger(),
                  "Pluginlib exception thrown while creating shared instances "
                  "of ik solver and/or display: '%s'",
                  ex.what());
@@ -94,7 +92,7 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
     display_.reset();
     return false;
   } catch (const std::exception& ex) {
-    RCLCPP_ERROR(LOGGER,
+    RCLCPP_ERROR(node_->get_logger(),
                  "Error while creating shared instances of ik solver and/or "
                  "display: '%s'",
                  ex.what());
@@ -106,7 +104,7 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
   // Initialize the IK solver plugin and display plugin
   if (!ik_solver_->initialize(sp_.ik_solver_config_name, node_, model_) ||
       !display_->initialize(sp_.display_config_name, node_, model_)) {
-    RCLCPP_ERROR(LOGGER,
+    RCLCPP_ERROR(node_->get_logger(),
                  "Could not initialized both display and ik solver plugins!");
     ik_solver_.reset();
     display_.reset();
@@ -122,8 +120,8 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
   } else {
     dir_ = ament_index_cpp::get_package_share_directory("reach_core") +
            "/results/";
-    RCLCPP_WARN(LOGGER, "Using default results file directory: '%s'",
-                dir_.c_str());
+    RCLCPP_WARN(node_->get_logger(),
+                "Using default results file directory: '%s'", dir_.c_str());
   }
   results_dir_ = dir_ + sp_.config_name + "/";
   const char* char_dir = results_dir_.c_str();
@@ -147,13 +145,14 @@ bool ReachStudy::run(const StudyParameters& sp) {
 
   // Initialize the study
   if (!initializeStudy(sp)) {
-    RCLCPP_ERROR(LOGGER, "Failed to initialize the reach study");
+    RCLCPP_ERROR(node_->get_logger(), "Failed to initialize the reach study");
     return false;
   }
 
   // Get the reach object point cloud
   if (!getReachObjectPointCloud()) {
-    RCLCPP_ERROR(LOGGER, "Unable to obtain reach object point cloud");
+    RCLCPP_ERROR(node_->get_logger(),
+                 "Unable to obtain reach object point cloud");
     ik_solver_.reset();
     display_.reset();
     return false;
@@ -173,13 +172,14 @@ bool ReachStudy::run(const StudyParameters& sp) {
 
   // Attempt to load previously saved optimized reach_study database
   if (!db_->load(results_dir_ + OPT_SAVED_DB_NAME)) {
-    RCLCPP_INFO(LOGGER, "Unable to load optimized database at '%s'!",
+    RCLCPP_INFO(node_->get_logger(),
+                "Unable to load optimized database at '%s'!",
                 (results_dir_ + OPT_SAVED_DB_NAME).c_str());
     // Attempt to load previously saved initial reach study database
     if (!db_->load(results_dir_ + SAVED_DB_NAME)) {
-      RCLCPP_INFO(LOGGER, "------------------------------");
-      RCLCPP_INFO(LOGGER, "No reach study database loaded");
-      RCLCPP_INFO(LOGGER, "------------------------------");
+      RCLCPP_INFO(node_->get_logger(), "------------------------------");
+      RCLCPP_INFO(node_->get_logger(), "No reach study database loaded");
+      RCLCPP_INFO(node_->get_logger(), "------------------------------");
 
       // Run the first pass of the reach study
       runInitialReachStudy();
@@ -197,11 +197,11 @@ bool ReachStudy::run(const StudyParameters& sp) {
         return true;
       }
     } else {
-      RCLCPP_INFO(LOGGER,
+      RCLCPP_INFO(node_->get_logger(),
                   "----------------------------------------------------");
-      RCLCPP_INFO(LOGGER,
+      RCLCPP_INFO(node_->get_logger(),
                   "Unoptimized reach study database successfully loaded");
-      RCLCPP_INFO(LOGGER,
+      RCLCPP_INFO(node_->get_logger(),
                   "----------------------------------------------------");
 
       db_->printResults();
@@ -248,24 +248,30 @@ bool ReachStudy::run(const StudyParameters& sp) {
 
     // TODO(livanov93): add path based plugin run on optimized database
   } else {
-    RCLCPP_INFO(LOGGER, "--------------------------------------------------");
-    RCLCPP_INFO(LOGGER, "Optimized reach study database successfully loaded");
-    RCLCPP_INFO(LOGGER, "--------------------------------------------------");
+    RCLCPP_INFO(node_->get_logger(),
+                "--------------------------------------------------");
+    RCLCPP_INFO(node_->get_logger(),
+                "Optimized reach study database successfully loaded");
+    RCLCPP_INFO(node_->get_logger(),
+                "--------------------------------------------------");
+
+    db_->printResults();
+    visualizer_->update();
 
     // TODO(livanov93): add here run of planning based plugin - add new type of
     //  plugin
     if (sp_.generate_paths) {
       if (!initializePathGeneration(sp_)) {
-        RCLCPP_ERROR(LOGGER, "Path Generation could not be initialized");
+        RCLCPP_ERROR(node_->get_logger(),
+                     "Path Generation could not be initialized");
         return false;
       }
 
       // path generation
       generatePaths();
-    }
 
-    db_->printResults();
-    visualizer_->update();
+      paths_db_->save(paths_path_);
+    }
   }
 
   // Find the average number of neighboring points can be reached by the robot
@@ -282,15 +288,15 @@ bool ReachStudy::run(const StudyParameters& sp) {
     // Compare database results
     if (!sp_.compare_dbs.empty()) {
       if (!compareDatabases()) {
-        RCLCPP_ERROR(LOGGER,
+        RCLCPP_ERROR(node_->get_logger(),
                      "Unable to compare the current reach study database with "
                      "the other specified databases");
       }
     }
     if (!sp_.visualize_dbs.empty()) {
-      RCLCPP_INFO(LOGGER, "Visualizing databases...");
+      RCLCPP_INFO(node_->get_logger(), "Visualizing databases...");
       if (!visualizeDatabases()) {
-        RCLCPP_ERROR(LOGGER,
+        RCLCPP_ERROR(node_->get_logger(),
                      "Unable to compare the current reach study database with "
                      "the other specified databases");
       }
@@ -331,7 +337,8 @@ bool ReachStudy::getReachObjectPointCloud() {
   req->fixed_frame = sp_.fixed_frame;
   req->object_frame = sp_.object_frame;
 
-  RCLCPP_INFO(LOGGER, "Waiting for service '%s'.", SAMPLE_MESH_SRV_TOPIC);
+  RCLCPP_INFO(node_->get_logger(), "Waiting for service '%s'.",
+              SAMPLE_MESH_SRV_TOPIC);
   client->wait_for_service();
   bool success_tmp = false;
   bool inner_callback_finished = false;
@@ -341,7 +348,8 @@ bool ReachStudy::getReachObjectPointCloud() {
                     inner_future) {
         success_tmp = inner_future.get()->success;
         cloud_msg_ = inner_future.get()->cloud;
-        RCLCPP_DEBUG(LOGGER, "Inner service callback message: '%s'",
+        RCLCPP_DEBUG(node_->get_logger(),
+                     "Inner service callback message: '%s'",
                      inner_future.get()->message.c_str());
         inner_callback_finished = true;
       };
@@ -363,8 +371,9 @@ bool ReachStudy::getReachObjectPointCloud() {
     return true;
 
   } else {
-    RCLCPP_ERROR_STREAM(LOGGER, "Failed to call point cloud loading service '"
-                                    << client->get_service_name() << "'");
+    RCLCPP_ERROR_STREAM(node_->get_logger(),
+                        "Failed to call point cloud loading service '"
+                            << client->get_service_name() << "'");
     return false;
   }
 }
@@ -440,8 +449,8 @@ void ReachStudy::runInitialReachStudy() {
 }
 
 void ReachStudy::optimizeReachStudyResults() {
-  RCLCPP_INFO(LOGGER, "----------------------");
-  RCLCPP_INFO(LOGGER, "Beginning optimization");
+  RCLCPP_INFO(node_->get_logger(), "----------------------");
+  RCLCPP_INFO(node_->get_logger(), "Beginning optimization");
 
   // Create sequential vector to be randomized
   std::vector<std::size_t> rand_vec(db_->size());
@@ -456,7 +465,7 @@ void ReachStudy::optimizeReachStudyResults() {
 
   while (pct_improve > sp_.optimization.step_improvement_threshold &&
          n_opt < sp_.optimization.max_steps) {
-    RCLCPP_INFO(LOGGER, "Entering optimization loop %d", n_opt);
+    RCLCPP_INFO(node_->get_logger(), "Entering optimization loop %d", n_opt);
     previous_score = db_->getStudyResults().norm_total_pose_score;
     current_counter = 0;
     previous_pct = 0;
@@ -491,13 +500,15 @@ void ReachStudy::optimizeReachStudyResults() {
   db_->calculateResults();
   db_->save(results_dir_ + OPT_SAVED_DB_NAME);
 
-  RCLCPP_INFO(LOGGER, "----------------------");
-  RCLCPP_INFO(LOGGER, "Optimization concluded");
+  RCLCPP_INFO(node_->get_logger(), "----------------------");
+  RCLCPP_INFO(node_->get_logger(), "Optimization concluded");
 }
 
 void ReachStudy::getAverageNeighborsCount() {
-  RCLCPP_INFO(LOGGER, "--------------------------------------------");
-  RCLCPP_INFO(LOGGER, "Beginning average neighbor count calculation");
+  RCLCPP_INFO(node_->get_logger(),
+              "--------------------------------------------");
+  RCLCPP_INFO(node_->get_logger(),
+              "Beginning average neighbor count calculation");
 
   std::atomic<int> current_counter, previous_pct, neighbor_count;
   current_counter = previous_pct = neighbor_count = 0;
@@ -529,9 +540,12 @@ void ReachStudy::getAverageNeighborsCount() {
                              static_cast<float>(neighbor_count.load());
 
   RCLCPP_INFO_STREAM(
-      LOGGER, "Average number of neighbors reached: " << avg_neighbor_count);
-  RCLCPP_INFO_STREAM(LOGGER, "Average joint distance: " << avg_joint_distance);
-  RCLCPP_INFO(LOGGER, "------------------------------------------------");
+      node_->get_logger(),
+      "Average number of neighbors reached: " << avg_neighbor_count);
+  RCLCPP_INFO_STREAM(node_->get_logger(),
+                     "Average joint distance: " << avg_joint_distance);
+  RCLCPP_INFO(node_->get_logger(),
+              "------------------------------------------------");
 
   db_->setAverageNeighborsCount(avg_neighbor_count);
   db_->setAverageJointDistance(avg_joint_distance);
@@ -556,7 +570,7 @@ bool ReachStudy::compareDatabases() {
   for (size_t i = 0; i < db_filenames.size(); ++i) {
     ReachDatabase db;
     if (!db.load(db_filenames[i])) {
-      RCLCPP_ERROR(LOGGER, "Cannot load database at:\n %s",
+      RCLCPP_ERROR(node_->get_logger(), "Cannot load database at:\n %s",
                    db_filenames[i].c_str());
       continue;
     }
@@ -565,7 +579,7 @@ bool ReachStudy::compareDatabases() {
 
   if (data.size() < 2) {
     RCLCPP_ERROR(
-        LOGGER,
+        node_->get_logger(),
         "Only %lu database(s) loaded; cannot compare fewer than 2 databases",
         data.size());
     return false;
@@ -594,7 +608,7 @@ bool ReachStudy::visualizeDatabases() {
   for (size_t i = 0; i < db_filenames.size(); ++i) {
     ReachDatabase db;
     if (!db.load(db_filenames[i])) {
-      RCLCPP_ERROR(LOGGER, "Cannot load database at:\n %s",
+      RCLCPP_ERROR(node_->get_logger(), "Cannot load database at:\n %s",
                    db_filenames[i].c_str());
       continue;
     }
@@ -603,7 +617,7 @@ bool ReachStudy::visualizeDatabases() {
 
   if (data.size() < 2) {
     RCLCPP_ERROR(
-        LOGGER,
+        node_->get_logger(),
         "Only %lu database(s) loaded; cannot compare fewer than 2 databases",
         data.size());
     return false;
@@ -621,7 +635,7 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
     path_generators_[i] =
         path_generator_loader_.createSharedInstance(sp.path_based_plugins[i]);
     if (!path_generators_[i]->initialize(sp.paths[i], node_, model_)) {
-      RCLCPP_ERROR(LOGGER, "Could not initialize '%s' '%s'",
+      RCLCPP_ERROR(node_->get_logger(), "Could not initialize '%s' '%s'",
                    sp.paths[i].c_str(), sp.path_based_plugins[i].c_str());
       return false;
     }
@@ -658,8 +672,9 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
         moveit::core::RobotState rs(model_);
         auto jmg = model_->getJointModelGroup(sp_.planning_group);
         if (!jmg) {
-          RCLCPP_ERROR_STREAM(LOGGER, "Failed to get joint model group for '"
-                                          << sp_.planning_group << "'");
+          RCLCPP_ERROR_STREAM(node_->get_logger(),
+                              "Failed to get joint model group for '"
+                                  << sp_.planning_group << "'");
           return false;
         }
         std::vector<double> start_state_subset;
@@ -698,10 +713,12 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
     return false;
   }
 
+  RCLCPP_INFO(node_->get_logger(), "Path Generation Initialized Successfully");
   return true;
 }
 
 void ReachStudy::generatePaths() {
+  RCLCPP_INFO(node_->get_logger(), "Generating paths...");
   // for each record
   for (auto it = paths_db_->begin(); it != paths_db_->end(); ++it) {
     // get the whole record to update it with paths
@@ -710,7 +727,7 @@ void ReachStudy::generatePaths() {
       // get target from db
       auto start_state = jointStateMsgToMap(r.goal_state);
       std::map<std::string, double> end_state;
-      double fraction;
+      double fraction = 0.0;
       moveit_msgs::msg::RobotTrajectory trajectory;
       bool total_score_ok = false;
 
@@ -722,10 +739,10 @@ void ReachStudy::generatePaths() {
         // check if there is score
         if (score) {
           total_score_ok = true;
-          // append trajectory
-          // append fraction
-          // create complex data structure to hold for each trajectory:
-          // start state, end state, fraction, trajectory
+          reach_msgs::msg::ReachPath path;
+          path.fraction = fraction;
+          path.moveit_trajectory = trajectory;
+          r.paths.push_back(path);
 
           // prepare for next path generator
           start_state = end_state;
@@ -737,6 +754,7 @@ void ReachStudy::generatePaths() {
       paths_db_->put(r);
     }
   }
+  RCLCPP_INFO(node_->get_logger(), "Paths generated!");
 }
 
 }  // namespace core
