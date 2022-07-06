@@ -270,7 +270,8 @@ bool ReachStudy::run(const StudyParameters& sp) {
       // path generation
       generatePaths();
 
-      paths_db_->save(paths_path_);
+      db_->save(paths_path_);
+      //        paths_db_->save(paths_path_);
     }
   }
 
@@ -642,14 +643,16 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
   }
 
   if (sp.initial_source_db) {
-    paths_path_ = ament_index_cpp::get_package_share_directory(sp.db_package) +
-                  "/" + sp.db_dir + "/" + sp.db_config_name + "/" + sp.db_name;
-    if (!std::filesystem::exists(paths_path_)) {
-      return false;
-    } else {
-      bool loaded = paths_db_->load(paths_path_);
-      if (!loaded) return false;
-    }
+    //    paths_path_ =
+    //    ament_index_cpp::get_package_share_directory(sp.db_package) +
+    //                  "/" + sp.db_dir + "/" + sp.db_config_name + "/" +
+    //                  sp.db_name;
+    //    if (!std::filesystem::exists(paths_path_)) {
+    //      return false;
+    //    } else {
+    //      bool loaded = paths_db_->load(paths_path_);
+    //      if (!loaded) return false;
+    //    }
   } else if (sp.initial_source_robot_configurations) {
     std::string yaml_path = ament_index_cpp::get_package_share_directory(
                                 sp.robot_configurations_package) +
@@ -659,6 +662,7 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
     if (!std::filesystem::exists(yaml_path)) {
       return false;
     }
+
     // load yaml
     YAML::Node config = YAML::LoadFile(yaml_path);
     for (const auto& robot_configuration :
@@ -693,9 +697,28 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
         r.seed_state =
             mapToJointStateMsg(robot_configurations_[robot_configuration]);
       }
-      paths_db_->put(r);
+      //      paths_db_->put(r);
+      db_->put(r);
     }
 
+    // create database
+    //          std::string tmp_db_path =
+    //                  ament_index_cpp::get_package_share_directory(sp.db_package)
+    //                  + "/" + sp.db_dir + "/" + sp.db_config_name + "/";
+    //          if (!std::filesystem::exists(tmp_db_path)) {
+    //              std::filesystem::path path(tmp_db_path.c_str());
+    //              std::filesystem::create_directories(path);
+    //          }
+    //          paths_path_ = tmp_db_path + sp.db_name;
+    //          // save database
+    //          paths_db_->save(paths_path_);
+
+  } else {
+    paths_db_ = nullptr;
+    return false;
+  }
+
+  {
     // create database
     std::string tmp_db_path =
         ament_index_cpp::get_package_share_directory(sp.db_package) + "/" +
@@ -705,12 +728,8 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
       std::filesystem::create_directories(path);
     }
     paths_path_ = tmp_db_path + sp.db_name;
-    // save database
-    paths_db_->save(paths_path_);
 
-  } else {
-    paths_db_ = nullptr;
-    return false;
+    db_->save(paths_path_);
   }
 
   RCLCPP_INFO(node_->get_logger(), "Path Generation Initialized Successfully");
@@ -719,11 +738,20 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
 
 void ReachStudy::generatePaths() {
   RCLCPP_INFO(node_->get_logger(), "Generating paths...");
+  const int total_size = static_cast<int>(db_->size());
+  // Loop through all points in point cloud and get IK solution
+  std::atomic<int> current_counter, previous_pct;
+  current_counter = previous_pct = 0;
+
   // for each record
-  for (auto it = paths_db_->begin(); it != paths_db_->end(); ++it) {
+  for (auto it = db_->begin(); it != db_->end(); ++it) {
+    //      for (auto it = paths_db_->begin(); it != paths_db_->end(); ++it) {
     // get the whole record to update it with paths
     reach_msgs::msg::ReachRecord r = it->second;
     if (r.reached) {
+      // if it is reached clear paths
+      r.paths.clear();
+
       // get target from db
       auto start_state = jointStateMsgToMap(r.goal_state);
       std::map<std::string, double> end_state;
@@ -751,8 +779,13 @@ void ReachStudy::generatePaths() {
           break;
         }
       }
-      paths_db_->put(r);
+      //      paths_db_->put(r);
+      db_->put(r);
     }
+
+    // Print function progress
+    current_counter++;
+    utils::integerProgressPrinter(current_counter, previous_pct, total_size);
   }
   RCLCPP_INFO(node_->get_logger(), "Paths generated!");
 }

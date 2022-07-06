@@ -60,6 +60,9 @@ class MoveItReachDisplay : public reach::plugins::DisplayBase {
   virtual void updateRobotTrajectory(
       const std::vector<std::map<std::string, double>>& traj) override;
 
+  virtual void updateRobotTrajectory(
+      const reach_msgs::msg::ReachRecord& rec) override;
+
  private:
   moveit::core::RobotModelConstPtr model_;
 

@@ -166,6 +166,26 @@ void MoveItReachDisplay::updateRobotTrajectory(
   }
 }
 
+void MoveItReachDisplay::updateRobotTrajectory(
+    const reach_msgs::msg::ReachRecord& rec) {
+  if (rec.reached) {
+    moveit_msgs::msg::DisplayTrajectory trajectory_msg;
+
+    // start state for trajectory is goal state of ik solver
+    moveit::core::RobotState rs(model_);
+    moveit::core::jointStateToRobotState(rec.goal_state, rs);
+    moveit::core::robotStateToRobotStateMsg(rs,
+                                            trajectory_msg.trajectory_start);
+    // append trajectories
+    for (const auto& p : rec.paths) {
+      trajectory_msg.trajectory.push_back(p.moveit_trajectory);
+    }
+
+    // publish trajectory
+    traj_pub_->publish(trajectory_msg);
+  }
+}
+
 void MoveItReachDisplay::showEnvironment(const std::vector<std::string>& names,
                                          const std::vector<double>& positions) {
 

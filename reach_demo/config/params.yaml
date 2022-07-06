@@ -140,12 +140,12 @@ robot_reach_study_node:
         global_transformation:
           tx: 0.0
           ty: 0.0
-          tz: 0.0
+          tz: 0.1
           rx: 0.0   #deg
           ry: 0.0  #deg
           rz: 0.0    #deg
         tool_transformation:
-          tx: 0.2
+          tx: 0.0
           ty: 0.0
           tz: 0.0
           rx: 0.0   #deg
