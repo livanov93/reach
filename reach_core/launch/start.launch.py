@@ -215,9 +215,9 @@ def generate_launch_description():
     )
 
     nodes_to_run = [robot_reach_study_node,
-                    control_node,
+                    # control_node,
                     robot_state_publisher_node,
-                    joint_state_broadcaster_spawner,
+                    # joint_state_broadcaster_spawner,
                     run_move_group_node,
                     rviz_node]
 

@@ -70,65 +70,9 @@ visualization_msgs::msg::Marker makeVisual(
     marker.color.a = 1.0;  // Don't forget to set the alpha!
 
     if (r.reached) {
-      marker.color.r = 1.0 - r.retrieved_fraction;
-      marker.color.g = 1.0 - r.retrieved_fraction;
-      marker.color.b = r.retrieved_fraction;
-    } else {
-      marker.color.r = 1.0;
-      marker.color.g = 0.0;
-      marker.color.b = 0.0;
-    }
-  }
-
-  return marker;
-}
-
-visualization_msgs::msg::Marker makeVisualTraj(
-    const rclcpp::Node::SharedPtr& node, const reach_msgs::msg::ReachRecord& r,
-    const std::string& frame, const double scale, const std::string& ns,
-    const boost::optional<std::vector<float>>& color) {
-  static int idx = 0;
-
-  visualization_msgs::msg::Marker marker;
-  marker.header.frame_id = frame;
-  marker.header.stamp = node->now();
-  marker.ns = ns;
-  marker.id = idx++;
-  marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
-  marker.action = visualization_msgs::msg::Marker::ADD;
-
-  // Convert back to geometry_msgs pose
-  geometry_msgs::msg::Pose msg;
-  marker.pose = msg;
-
-  size_t wpts_size = r.waypoints.size();
-  // fill the points
-  for (size_t i = 0; i < wpts_size && ((wpts_size % 7u) == 0u); i += 7u) {
-    geometry_msgs::msg::Point p_tmp;
-    p_tmp.set__x(r.waypoints[i + 0]);
-    p_tmp.set__y(r.waypoints[i + 1]);
-    p_tmp.set__z(r.waypoints[i + 2]);
-    marker.points.push_back(p_tmp);
-  }
-
-  // sphere diameters
-  marker.scale.x = SPHERE_DIAMETER;
-  marker.scale.y = SPHERE_DIAMETER;
-  marker.scale.z = SPHERE_DIAMETER;
-
-  if (color) {
-    std::vector<float> color_vec = *color;
-    marker.color.r = color_vec[0];
-    marker.color.g = color_vec[1];
-    marker.color.b = color_vec[2];
-    marker.color.a = color_vec[3];
-  } else {
-    marker.color.a = 1.0;  // Don't forget to set the alpha!
-
-    if (r.reached) {
       marker.color.r = 0.0;
-      marker.color.g = 1.0;
-      marker.color.b = 0.0;
+      marker.color.g = 0.0;
+      marker.color.b = 1.0;
     } else {
       marker.color.r = 1.0;
       marker.color.g = 0.0;
@@ -155,12 +99,6 @@ visualization_msgs::msg::InteractiveMarker makeInteractiveMarker(
   // Visuals
   auto visual = utils::makeVisual(node, r, frame, scale);
   control.markers.push_back(visual);
-  // TODO (livanov93): what to do with this since trajectory fraction now is
-  // colorized by scaling between red and blue
-  //  if (!r.waypoints.empty()) {
-  //    auto visual_traj = utils::makeVisualTraj(node, r, frame, scale);
-  //    control.markers.push_back(visual_traj);
-  //  }
   m.controls.push_back(control);
 
   return m;

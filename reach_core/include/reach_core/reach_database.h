@@ -42,10 +42,7 @@ reach_msgs::msg::ReachRecord makeRecord(
     const std::string& id, const bool reached,
     const geometry_msgs::msg::Pose& goal,
     const sensor_msgs::msg::JointState& seed_state,
-    const sensor_msgs::msg::JointState& goal_state, const double score,
-    const std::string& ik_solver_name, const std::vector<double>& waypoints,
-    const std::vector<double>& trajectory, double retrieved_fraction,
-    const moveit_msgs::msg::RobotTrajectory& moveit_trajectory);
+    const sensor_msgs::msg::JointState& goal_state, const double score);
 
 /**
  * @brief toMap
@@ -54,6 +51,9 @@ reach_msgs::msg::ReachRecord makeRecord(
  */
 std::map<std::string, double> jointStateMsgToMap(
     const sensor_msgs::msg::JointState& state);
+
+sensor_msgs::msg::JointState mapToJointStateMsg(
+    const std::map<std::string, double>& state);
 
 /**
  * @brief to vector of Map

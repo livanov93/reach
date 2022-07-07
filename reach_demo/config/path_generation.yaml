@@ -14,9 +14,6 @@ robot_reach_study_node:
     # average neighbor calc
     get_avg_neighbor_count: false
 
-    # invert orientation of normals
-    invert_z_tool_rotation: false
-
     # db comparison
     compare_dbs: [ "" ]
 
@@ -94,12 +91,12 @@ robot_reach_study_node:
 
       path_plugins:
         - path_1
-        - path_2
-      #        - path_3
-      #        - path_4
+#        - path_2
+#        - path_3
+#        - path_4
 
       path_1:
-        plugin_name: "moveit_reach_plugins/path/CartesianPathGeneration"
+        plugin_name: "moveit_reach_plugins/path_generation/CartesianPath"
         ##########################################################
         ############# PATH PLANNING SPECIFIC PARAMS ##############
         #########################################################
@@ -120,37 +117,13 @@ robot_reach_study_node:
         tool_transformation:
           tx: 0.0
           ty: 0.0
-          tz: -0.2
+          tz: 0.0
           rx: 0.0   #deg
           ry: 0.0  #deg
           rz: 0.0    #deg
 
       path_2:
-        plugin_name: "moveit_reach_plugins/path/CartesianPathGeneration"
-        ##########################################################
-        ############# PATH PLANNING SPECIFIC PARAMS ##############
-        #########################################################
-        max_velocity_scaling_factor: 0.5
-        max_acceleration_scaling_factor: 0.5
-        tool_frame: "tcp"
-        max_eef_step: 0.005
-        jump_threshold: 0.1 # cca 5 degrees
-        #########################################################
-        distance_threshold: 0.0 # distance threshold for collision checking
-        global_transformation:
-          tx: 0.0
-          ty: 0.0
-          tz: 0.0
-          rx: 0.0   #deg
-          ry: 0.0  #deg
-          rz: 0.0    #deg
-        tool_transformation:
-          tx: 0.2
-          ty: 0.0
-          tz: 0.0
-          rx: 0.0   #deg
-          ry: 0.0  #deg
-          rz: 0.0    #deg
+        plugin_name: "moveit_reach_plugins/path_generation/PlannerPath"
 
       path_3:
         plugin_name: "moveit_reach_plugins/path_generation/PlannerPath"

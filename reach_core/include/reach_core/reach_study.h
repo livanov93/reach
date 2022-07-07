@@ -26,25 +26,41 @@
 #include <pluginlib/class_loader.hpp>
 #include <reach_core/ik_helper.h>
 #include <reach_core/plugins/ik_solver_base.h>
+#include <reach_core/plugins/path_base.h>
 #include <reach_core/reach_visualizer.h>
 #include <reach_core/study_parameters.h>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/empty.hpp>
 
-//
-// namespace moveit
-//{
-//    namespace core
-//    {
-//        class RobotModel;
-//        typedef std::shared_ptr<const RobotModel> RobotModelConstPtr;
-//        class JointModelGroup;
-//    }
-//}
+bool transcribeInputMap(const std::map<std::string, double>& input,
+                        const std::vector<std::string>& joint_names,
+                        std::vector<double>& input_subset) {
+  if (joint_names.size() > input.size()) {
+    return false;
+  }
+
+  // Pull the joints of the planning group out of the input map
+  std::vector<double> tmp;
+  tmp.reserve(joint_names.size());
+  for (const std::string& name : joint_names) {
+    const auto it = input.find(name);
+    if (it == input.end()) {
+      return false;
+    } else {
+      tmp.push_back(it->second);
+    }
+  }
+
+  input_subset = std::move(tmp);
+
+  return true;
+}
 
 namespace reach {
 namespace core {
 
+typedef std::map<std::string, std::map<std::string, double>>
+    RobotConfigurations;
 /**
  * @brief The ReachStudy class
  */
@@ -75,6 +91,10 @@ class ReachStudy {
  private:
   bool initializeStudy(const StudyParameters& sp);
 
+  bool initializePathGeneration(const StudyParameters& sp);
+
+  void generatePaths();
+
   bool getReachObjectPointCloud();
 
   void runInitialReachStudy();
@@ -96,8 +116,13 @@ class ReachStudy {
   // Plugins
   pluginlib::ClassLoader<reach::plugins::IKSolverBase> solver_loader_;
   pluginlib::ClassLoader<reach::plugins::DisplayBase> display_loader_;
+  pluginlib::ClassLoader<reach::plugins::PathBase> path_generator_loader_;
   reach::plugins::IKSolverBasePtr ik_solver_;
   reach::plugins::DisplayBasePtr display_;
+  std::vector<reach::plugins::PathBasePtr> path_generators_;
+  ReachDatabasePtr paths_db_;
+  RobotConfigurations robot_configurations_;
+  std::string paths_path_;
 
   ReachVisualizerPtr visualizer_;
 
@@ -110,7 +135,6 @@ class ReachStudy {
   sensor_msgs::msg::PointCloud2 cloud_msg_;
 
   std::shared_ptr<rclcpp::Node> node_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ps_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr done_pub_;
 
   // robot model

@@ -21,6 +21,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(yaml-cpp)
 
 
 find_package(OpenMP)
@@ -109,13 +110,15 @@ add_library(${PROJECT_NAME}
   src/core/reach_visualizer.cpp
   # Reach Study
   src/core/reach_study.cpp
+  # path generation
+  src/core/path_generation.cpp
 )
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_utils)
+target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_utils yaml-cpp)
 ament_target_dependencies(${PROJECT_NAME}
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )

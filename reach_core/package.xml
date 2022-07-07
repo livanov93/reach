@@ -29,6 +29,7 @@
   <depend>moveit_ros_planning_interface</depend>
   <depend>std_msgs</depend>
   <depend>moveit_msgs</depend>
+  <depend>libyaml-cpp-dev</depend>
 
   <export>
     <reach_core plugin="${prefix}/plugin_description.xml"/>
