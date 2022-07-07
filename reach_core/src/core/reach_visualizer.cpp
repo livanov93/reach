@@ -35,7 +35,7 @@ ReachVisualizer::ReachVisualizer(
     ReachDatabasePtr db, reach::plugins::IKSolverBasePtr solver,
     reach::plugins::DisplayBasePtr display, const double neighbor_radius,
     SearchTreePtr search_tree,
-    const std::vector<reach::plugins::PathBasePtr>& path_generators)
+    std::vector<reach::plugins::PathBasePtr>* path_generators)
     : db_(db),
       solver_(solver),
       display_(display),
@@ -95,8 +95,8 @@ void ReachVisualizer::reGeneratePathsCB(
       bool total_score_ok = false;
 
       // for each path generator
-      for (size_t i = 0; i < path_generators_.size(); ++i) {
-        std::optional<double> score = path_generators_[i]->solvePath(
+      for (size_t i = 0; i < path_generators_->size(); ++i) {
+        std::optional<double> score = path_generators_->at(i)->solvePath(
             start_state, end_state, fraction, trajectory);
 
         // check if there is score

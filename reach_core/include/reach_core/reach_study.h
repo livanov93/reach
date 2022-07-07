@@ -35,6 +35,12 @@
 bool transcribeInputMap(const std::map<std::string, double>& input,
                         const std::vector<std::string>& joint_names,
                         std::vector<double>& input_subset) {
+  //    for(const auto & i : input){
+  //        printf("%s...%f\n", i.first.c_str(), i.second);
+  //    }
+  //    for(const auto & i : joint_names){
+  //        printf("%s\n", i.c_str());
+  //    }
   if (joint_names.size() > input.size()) {
     return false;
   }

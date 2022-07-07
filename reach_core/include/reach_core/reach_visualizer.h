@@ -45,7 +45,7 @@ class ReachVisualizer {
       ReachDatabasePtr db, reach::plugins::IKSolverBasePtr solver,
       reach::plugins::DisplayBasePtr display, const double neighbor_radius,
       SearchTreePtr search_tree = nullptr,
-      const std::vector<reach::plugins::PathBasePtr>& path_generators = {});
+      std::vector<reach::plugins::PathBasePtr>* path_generators = nullptr);
 
   void update();
 
@@ -84,7 +84,7 @@ class ReachVisualizer {
 
   double neighbor_radius_;
 
-  std::vector<reach::plugins::PathBasePtr> path_generators_;
+  std::vector<reach::plugins::PathBasePtr>* path_generators_;
 };
 typedef std::shared_ptr<ReachVisualizer> ReachVisualizerPtr;
 
