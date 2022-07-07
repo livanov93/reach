@@ -69,6 +69,7 @@ struct StudyParameters {
 
   // path generator stuff
   bool generate_paths;
+  bool generate_paths_only;
   bool initial_source_db;
   bool initial_source_robot_configurations;
   std::vector<std::string> paths;

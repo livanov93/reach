@@ -27,6 +27,9 @@ robot_reach_study_node:
 
     # to do path generation or not
     generate_paths: true
+    # set if path_generation_config.initial_source_robot_configurations is true
+    # when existing database is not needed -> source is defined in yaml file by robot configs
+    generate_paths_only: false
 
     visualize_results: true
     keep_running: true
@@ -81,7 +84,7 @@ robot_reach_study_node:
         config_name: "demo_config"
         package: "reach_demo"
         directory: "results"
-        name: "optimized_reach.db"
+        name: "path_optimized_reach.db"
 
       initial_source_robot_configurations: false  # true
       robot_configurations:
@@ -140,12 +143,12 @@ robot_reach_study_node:
         global_transformation:
           tx: 0.0
           ty: 0.0
-          tz: 0.0
+          tz: 0.1
           rx: 0.0   #deg
           ry: 0.0  #deg
           rz: 0.0    #deg
         tool_transformation:
-          tx: 0.2
+          tx: 0.0
           ty: 0.0
           tz: 0.0
           rx: 0.0   #deg

@@ -70,9 +70,22 @@ visualization_msgs::msg::Marker makeVisual(
     marker.color.a = 1.0;  // Don't forget to set the alpha!
 
     if (r.reached) {
-      marker.color.r = 0.0;
-      marker.color.g = 0.0;
-      marker.color.b = 1.0;
+      double fraction_sum = 0.0;
+      int fraction_no = 0;
+      for (const auto& p : r.paths) {
+        fraction_no++;
+        fraction_sum += p.fraction;
+      }
+      if (fraction_no != 0.0) {
+        marker.color.r = 1.0 - fraction_sum / fraction_no;
+        marker.color.g = 1.0 - fraction_sum / fraction_no;
+        marker.color.b = fraction_sum / fraction_no;
+      } else {
+        marker.color.r = 0.0;
+        marker.color.g = 0.0;
+        marker.color.b = 1.0;
+      }
+
     } else {
       marker.color.r = 1.0;
       marker.color.g = 0.0;

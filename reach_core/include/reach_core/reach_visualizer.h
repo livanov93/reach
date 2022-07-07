@@ -17,7 +17,9 @@
 #define REACH_CORE_STUDY_VISUALIZER_H
 
 #include <reach_core/ik_helper.h>
+#include <reach_core/plugins/evaluation_base.h>
 #include <reach_core/plugins/ik_solver_base.h>
+#include <reach_core/plugins/path_base.h>
 #include <reach_core/plugins/reach_display_base.h>
 #include <reach_core/reach_database.h>
 
@@ -39,15 +41,20 @@ class ReachVisualizer {
    * @param neighbor_radius
    * @param search_tree
    */
-  ReachVisualizer(ReachDatabasePtr db, reach::plugins::IKSolverBasePtr solver,
-                  reach::plugins::DisplayBasePtr display,
-                  const double neighbor_radius,
-                  SearchTreePtr search_tree = nullptr);
+  ReachVisualizer(
+      ReachDatabasePtr db, reach::plugins::IKSolverBasePtr solver,
+      reach::plugins::DisplayBasePtr display, const double neighbor_radius,
+      SearchTreePtr search_tree = nullptr,
+      std::vector<reach::plugins::PathBasePtr>* path_generators = nullptr);
 
   void update();
 
  private:
   void reSolveIKCB(
+      const visualization_msgs::msg::InteractiveMarkerFeedback::ConstSharedPtr&
+          fb);
+
+  void reGeneratePathsCB(
       const visualization_msgs::msg::InteractiveMarkerFeedback::ConstSharedPtr&
           fb);
 
@@ -76,6 +83,8 @@ class ReachVisualizer {
   SearchTreePtr search_tree_;
 
   double neighbor_radius_;
+
+  std::vector<reach::plugins::PathBasePtr>* path_generators_;
 };
 typedef std::shared_ptr<ReachVisualizer> ReachVisualizerPtr;
 

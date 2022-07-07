@@ -51,7 +51,6 @@ ReachStudy::ReachStudy(const rclcpp::Node::SharedPtr node)
     : node_(node),
       cloud_(new pcl::PointCloud<pcl::PointNormal>()),
       db_(new ReachDatabase()),
-      paths_db_(new ReachDatabase()),
       solver_loader_(PACKAGE, IK_BASE_CLASS),
       display_loader_(PACKAGE, DISPLAY_BASE_CLASS),
       path_generator_loader_(PACKAGE, PATH_BASE_CLASS) {}
@@ -167,111 +166,108 @@ bool ReachStudy::run(const StudyParameters& sp) {
   }
 
   // Create markers
-  visualizer_.reset(
-      new ReachVisualizer(db_, ik_solver_, display_, sp_.optimization.radius));
+  visualizer_.reset(new ReachVisualizer(db_, ik_solver_, display_,
+                                        sp_.optimization.radius, nullptr,
+                                        &path_generators_));
 
-  // Attempt to load previously saved optimized reach_study database
-  if (!db_->load(results_dir_ + OPT_SAVED_DB_NAME)) {
-    RCLCPP_INFO(node_->get_logger(),
-                "Unable to load optimized database at '%s'!",
-                (results_dir_ + OPT_SAVED_DB_NAME).c_str());
-    // Attempt to load previously saved initial reach study database
-    if (!db_->load(results_dir_ + SAVED_DB_NAME)) {
-      RCLCPP_INFO(node_->get_logger(), "------------------------------");
-      RCLCPP_INFO(node_->get_logger(), "No reach study database loaded");
-      RCLCPP_INFO(node_->get_logger(), "------------------------------");
+  if (!sp_.generate_paths_only) {
+    // Attempt to load previously saved optimized reach_study database
+    if (!db_->load(results_dir_ + OPT_SAVED_DB_NAME)) {
+      RCLCPP_INFO(node_->get_logger(),
+                  "Unable to load optimized database at '%s'!",
+                  (results_dir_ + OPT_SAVED_DB_NAME).c_str());
+      // Attempt to load previously saved initial reach study database
+      if (!db_->load(results_dir_ + SAVED_DB_NAME)) {
+        RCLCPP_INFO(node_->get_logger(), "------------------------------");
+        RCLCPP_INFO(node_->get_logger(), "No reach study database loaded");
+        RCLCPP_INFO(node_->get_logger(), "------------------------------");
 
-      // Run the first pass of the reach study
-      runInitialReachStudy();
+        // Run the first pass of the reach study
+        runInitialReachStudy();
+        db_->printResults();
+        visualizer_->update();
+        // check if we don't have to optimize
+        if (sp.run_initial_study_only) {
+          done_pub_->publish(std_msgs::msg::Empty());
+          while (rclcpp::ok() && sp_.keep_running) {
+            // keep it running
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+          db_->calculateResults();
+          db_->save(results_dir_ + SAVED_DB_NAME);
+          return true;
+        }
+      } else {
+        RCLCPP_INFO(node_->get_logger(),
+                    "----------------------------------------------------");
+        RCLCPP_INFO(node_->get_logger(),
+                    "Unoptimized reach study database successfully loaded");
+        RCLCPP_INFO(node_->get_logger(),
+                    "----------------------------------------------------");
+
+        db_->printResults();
+        visualizer_->update();
+
+        // check if we don't have to optimize
+        if (sp.run_initial_study_only) {
+          done_pub_->publish(std_msgs::msg::Empty());
+
+          while (rclcpp::ok() && sp_.keep_running) {
+            // keep it running
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+
+          db_->calculateResults();
+          db_->save(results_dir_ + SAVED_DB_NAME);
+          return true;
+        }
+      }
+
+      // Create an efficient search tree for doing nearest neighbors search
+      search_tree_.reset(
+          new SearchTree(flann::KDTreeSingleIndexParams(1, true)));
+
+      flann::Matrix<double> dataset(new double[db_->size() * 3], db_->size(),
+                                    3);
+      for (std::size_t i = 0; i < db_->size(); ++i) {
+        auto it = db_->begin();
+        std::advance(it, i);
+
+        dataset[i][0] = static_cast<double>(it->second.goal.position.x);
+        dataset[i][1] = static_cast<double>(it->second.goal.position.y);
+        dataset[i][2] = static_cast<double>(it->second.goal.position.z);
+      }
+      search_tree_->buildIndex(dataset);
+
+      // Run the optimization
+      optimizeReachStudyResults();
       db_->printResults();
       visualizer_->update();
-      // check if we don't have to optimize
-      if (sp.run_initial_study_only) {
-        done_pub_->publish(std_msgs::msg::Empty());
-        while (rclcpp::ok() && sp_.keep_running) {
-          // keep it running
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        db_->calculateResults();
-        db_->save(results_dir_ + SAVED_DB_NAME);
-        return true;
-      }
     } else {
       RCLCPP_INFO(node_->get_logger(),
-                  "----------------------------------------------------");
+                  "--------------------------------------------------");
       RCLCPP_INFO(node_->get_logger(),
-                  "Unoptimized reach study database successfully loaded");
+                  "Optimized reach study database successfully loaded");
       RCLCPP_INFO(node_->get_logger(),
-                  "----------------------------------------------------");
+                  "--------------------------------------------------");
 
       db_->printResults();
       visualizer_->update();
-
-      // check if we don't have to optimize
-      // TODO(livanov93): don't optimize if planner based solver is used because
-      //  it then changes start state of planning which is not the idea, ideally
-      //  when new type of plugin is created motion generation will be option
-      //  that is doable on existing databases created by other ik solvers and
-      //  optimization procedures - ugly but...
-      if (sp.run_initial_study_only) {
-        done_pub_->publish(std_msgs::msg::Empty());
-
-        while (rclcpp::ok() && sp_.keep_running) {
-          // keep it running
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        db_->calculateResults();
-        db_->save(results_dir_ + SAVED_DB_NAME);
-        return true;
-      }
     }
+  }
 
-    // Create an efficient search tree for doing nearest neighbors search
-    search_tree_.reset(new SearchTree(flann::KDTreeSingleIndexParams(1, true)));
-
-    flann::Matrix<double> dataset(new double[db_->size() * 3], db_->size(), 3);
-    for (std::size_t i = 0; i < db_->size(); ++i) {
-      auto it = db_->begin();
-      std::advance(it, i);
-
-      dataset[i][0] = static_cast<double>(it->second.goal.position.x);
-      dataset[i][1] = static_cast<double>(it->second.goal.position.y);
-      dataset[i][2] = static_cast<double>(it->second.goal.position.z);
+  // check if paths should be generated
+  if (sp_.generate_paths || sp_.generate_paths_only) {
+    if (!initializePathGeneration(sp_)) {
+      RCLCPP_ERROR(node_->get_logger(),
+                   "Path Generation could not be initialized");
+      return false;
     }
-    search_tree_->buildIndex(dataset);
-
-    // Run the optimization
-    optimizeReachStudyResults();
+    // path generation
+    generatePaths();
+    db_->save(paths_path_);
     db_->printResults();
     visualizer_->update();
-
-    // TODO(livanov93): add path based plugin run on optimized database
-  } else {
-    RCLCPP_INFO(node_->get_logger(),
-                "--------------------------------------------------");
-    RCLCPP_INFO(node_->get_logger(),
-                "Optimized reach study database successfully loaded");
-    RCLCPP_INFO(node_->get_logger(),
-                "--------------------------------------------------");
-
-    db_->printResults();
-    visualizer_->update();
-
-    // TODO(livanov93): add here run of planning based plugin - add new type of
-    //  plugin
-    if (sp_.generate_paths) {
-      if (!initializePathGeneration(sp_)) {
-        RCLCPP_ERROR(node_->get_logger(),
-                     "Path Generation could not be initialized");
-        return false;
-      }
-
-      // path generation
-      generatePaths();
-
-      paths_db_->save(paths_path_);
-    }
   }
 
   // Find the average number of neighboring points can be reached by the robot
@@ -642,14 +638,16 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
   }
 
   if (sp.initial_source_db) {
-    paths_path_ = ament_index_cpp::get_package_share_directory(sp.db_package) +
-                  "/" + sp.db_dir + "/" + sp.db_config_name + "/" + sp.db_name;
-    if (!std::filesystem::exists(paths_path_)) {
-      return false;
-    } else {
-      bool loaded = paths_db_->load(paths_path_);
-      if (!loaded) return false;
-    }
+    //    paths_path_ =
+    //    ament_index_cpp::get_package_share_directory(sp.db_package) +
+    //                  "/" + sp.db_dir + "/" + sp.db_config_name + "/" +
+    //                  sp.db_name;
+    //    if (!std::filesystem::exists(paths_path_)) {
+    //      return false;
+    //    } else {
+    //      bool loaded = paths_db_->load(paths_path_);
+    //      if (!loaded) return false;
+    //    }
   } else if (sp.initial_source_robot_configurations) {
     std::string yaml_path = ament_index_cpp::get_package_share_directory(
                                 sp.robot_configurations_package) +
@@ -657,8 +655,11 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
                             sp.robot_configurations_name;
     // check if yaml exists
     if (!std::filesystem::exists(yaml_path)) {
+      RCLCPP_ERROR(node_->get_logger(), "No file found under path '%s'",
+                   yaml_path.c_str());
       return false;
     }
+
     // load yaml
     YAML::Node config = YAML::LoadFile(yaml_path);
     for (const auto& robot_configuration :
@@ -679,11 +680,14 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
         }
         std::vector<double> start_state_subset;
         if (!transcribeInputMap(robot_configurations_[robot_configuration],
-                                jmg->getJointModelNames(),
+                                jmg->getActiveJointModelNames(),
                                 start_state_subset)) {
+          RCLCPP_ERROR(node_->get_logger(), "Could not transcribe input map");
           return false;
         }
         rs.setJointGroupPositions(jmg, start_state_subset);
+        // count that it is reached state
+        r.reached = true;
         r.id = robot_configuration;
         r.goal =
             tf2::toMsg(rs.getGlobalLinkTransform(sp_.fixed_frame).inverse() *
@@ -693,9 +697,27 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
         r.seed_state =
             mapToJointStateMsg(robot_configurations_[robot_configuration]);
       }
-      paths_db_->put(r);
+      db_->put(r);
     }
 
+    // create database
+    //          std::string tmp_db_path =
+    //                  ament_index_cpp::get_package_share_directory(sp.db_package)
+    //                  + "/" + sp.db_dir + "/" + sp.db_config_name + "/";
+    //          if (!std::filesystem::exists(tmp_db_path)) {
+    //              std::filesystem::path path(tmp_db_path.c_str());
+    //              std::filesystem::create_directories(path);
+    //          }
+    //          paths_path_ = tmp_db_path + sp.db_name;
+    //          // save database
+    //          paths_db_->save(paths_path_);
+
+  } else {
+    paths_db_ = nullptr;
+    return false;
+  }
+
+  {
     // create database
     std::string tmp_db_path =
         ament_index_cpp::get_package_share_directory(sp.db_package) + "/" +
@@ -705,12 +727,8 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
       std::filesystem::create_directories(path);
     }
     paths_path_ = tmp_db_path + sp.db_name;
-    // save database
-    paths_db_->save(paths_path_);
 
-  } else {
-    paths_db_ = nullptr;
-    return false;
+    db_->save(paths_path_);
   }
 
   RCLCPP_INFO(node_->get_logger(), "Path Generation Initialized Successfully");
@@ -719,11 +737,19 @@ bool ReachStudy::initializePathGeneration(const StudyParameters& sp) {
 
 void ReachStudy::generatePaths() {
   RCLCPP_INFO(node_->get_logger(), "Generating paths...");
+  const int total_size = static_cast<int>(db_->size());
+  // Loop through all points in point cloud and get IK solution
+  std::atomic<int> current_counter, previous_pct;
+  current_counter = previous_pct = 0;
+
   // for each record
-  for (auto it = paths_db_->begin(); it != paths_db_->end(); ++it) {
+  for (auto it = db_->begin(); it != db_->end(); ++it) {
     // get the whole record to update it with paths
     reach_msgs::msg::ReachRecord r = it->second;
     if (r.reached) {
+      // if it is reached clear paths
+      r.paths.clear();
+
       // get target from db
       auto start_state = jointStateMsgToMap(r.goal_state);
       std::map<std::string, double> end_state;
@@ -751,8 +777,12 @@ void ReachStudy::generatePaths() {
           break;
         }
       }
-      paths_db_->put(r);
+      db_->put(r);
     }
+
+    // Print function progress
+    current_counter++;
+    utils::integerProgressPrinter(current_counter, previous_pct, total_size);
   }
   RCLCPP_INFO(node_->get_logger(), "Paths generated!");
 }

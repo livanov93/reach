@@ -31,16 +31,17 @@ const rclcpp::Logger LOGGER = rclcpp::get_logger("reach_core.reach_visualizer");
 
 using std::placeholders::_1;
 
-ReachVisualizer::ReachVisualizer(ReachDatabasePtr db,
-                                 reach::plugins::IKSolverBasePtr solver,
-                                 reach::plugins::DisplayBasePtr display,
-                                 const double neighbor_radius,
-                                 SearchTreePtr search_tree)
+ReachVisualizer::ReachVisualizer(
+    ReachDatabasePtr db, reach::plugins::IKSolverBasePtr solver,
+    reach::plugins::DisplayBasePtr display, const double neighbor_radius,
+    SearchTreePtr search_tree,
+    std::vector<reach::plugins::PathBasePtr>* path_generators)
     : db_(db),
       solver_(solver),
       display_(display),
       search_tree_(search_tree),
-      neighbor_radius_(neighbor_radius) {
+      neighbor_radius_(neighbor_radius),
+      path_generators_(path_generators) {
   // Create menu functions for the display and tie them to members of this class
   using CBType = interactive_markers::MenuHandler::FeedbackCallback;
   using FBType = visualization_msgs::msg::InteractiveMarkerFeedback;
@@ -48,6 +49,9 @@ ReachVisualizer::ReachVisualizer(ReachDatabasePtr db,
   CBType show_result_cb = std::bind(&ReachVisualizer::showResultCB, this, _1);
   CBType show_seed_cb = std::bind(&ReachVisualizer::showSeedCB, this, _1);
   CBType re_solve_ik_cb = std::bind(&ReachVisualizer::reSolveIKCB, this, _1);
+  CBType re_generate_paths_cb =
+      std::bind(&ReachVisualizer::reGeneratePathsCB, this, _1);
+
   CBType neighbors_direct_cb =
       std::bind(&ReachVisualizer::reachNeighborsDirectCB, this, _1);
   CBType neighbors_recursive_cb =
@@ -56,6 +60,7 @@ ReachVisualizer::ReachVisualizer(ReachDatabasePtr db,
   display_->createMenuFunction("Show Result", show_result_cb);
   display_->createMenuFunction("Show Seed Position", show_seed_cb);
   display_->createMenuFunction("Re-solve IK", re_solve_ik_cb);
+  display_->createMenuFunction("Re-generate PATHS", re_generate_paths_cb);
   display_->createMenuFunction("Show Reach to Neighbors (Direct)",
                                neighbors_direct_cb);
   display_->createMenuFunction("Show Reach to Neighbors (Recursive)",
@@ -67,6 +72,62 @@ ReachVisualizer::ReachVisualizer(ReachDatabasePtr db,
 
 void ReachVisualizer::update() {
   display_->addInteractiveMarkerData(db_->toReachDatabaseMsg());
+}
+
+void ReachVisualizer::reGeneratePathsCB(
+    const visualization_msgs::msg::InteractiveMarkerFeedback::ConstSharedPtr&
+        fb) {
+  std::optional<reach_msgs::msg::ReachRecord> lookup =
+      db_->get(fb->marker_name);
+
+  // check if record has been found
+  if (lookup) {
+    // get the whole record to update it with paths
+    if (lookup->reached) {
+      // if it is reached clear paths
+      lookup->paths.clear();
+
+      // get target from db
+      auto start_state = jointStateMsgToMap(lookup->goal_state);
+      std::map<std::string, double> end_state;
+      double fraction = 0.0;
+      moveit_msgs::msg::RobotTrajectory trajectory;
+      bool total_score_ok = false;
+
+      // for each path generator
+      for (size_t i = 0; i < path_generators_->size(); ++i) {
+        std::optional<double> score = path_generators_->at(i)->solvePath(
+            start_state, end_state, fraction, trajectory);
+
+        // check if there is score
+        if (score) {
+          total_score_ok = true;
+          reach_msgs::msg::ReachPath path;
+          path.fraction = fraction;
+          path.moveit_trajectory = trajectory;
+          lookup->paths.push_back(path);
+
+          // prepare for next path generator
+          start_state = end_state;
+        } else {
+          total_score_ok = false;
+          break;
+        }
+      }
+      db_->put(*lookup);
+
+      if (total_score_ok) {
+        RCLCPP_INFO(LOGGER, "All paths found for a point");
+        display_->updateRobotTrajectory(*lookup);
+      } else {
+        RCLCPP_ERROR(LOGGER, "Path generation failed for a point");
+      }
+    } else {
+      RCLCPP_ERROR(LOGGER, "IK solution not reached, no paths to generate");
+    }
+  } else {
+    RCLCPP_ERROR(LOGGER, "Could not retrieve record from database");
+  }
 }
 
 void ReachVisualizer::reSolveIKCB(
@@ -102,9 +163,6 @@ void ReachVisualizer::reSolveIKCB(
       display_->updateInteractiveMarker(*lookup);
       display_->updateRobotPose(jointStateMsgToMap(lookup->goal_state));
 
-      //      display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
-      //          joint_space_trajectory, lookup->goal_state.name));
-
       // Update the database
       db_->put(*lookup);
     } else {
@@ -123,8 +181,7 @@ void ReachVisualizer::showResultCB(
   auto lookup = db_->get(fb->marker_name);
   if (lookup) {
     display_->updateRobotPose(jointStateMsgToMap(lookup->goal_state));
-    //    display_->updateRobotTrajectory(jointStateArrayToArrayOfMaps(
-    //        lookup->joint_space_trajectory, lookup->goal_state.name));
+    display_->updateRobotTrajectory(*lookup);
   } else {
     RCLCPP_ERROR_STREAM(LOGGER,
                         "Record '" << fb->marker_name

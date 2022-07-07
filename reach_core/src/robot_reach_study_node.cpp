@@ -107,6 +107,8 @@ class RobotReachStudyNode : public rclcpp::Node {
 
       // to do path generation or not
       this->get_parameter_or("generate_paths", sp_.generate_paths, false);
+      this->get_parameter_or("generate_paths_only", sp_.generate_paths_only,
+                             false);
       this->get_parameter_or("path_generation_config.path_plugins", sp_.paths,
                              {});
       for (const auto& p : sp_.paths) {
