@@ -116,6 +116,7 @@ pluginlib_export_plugin_description_file(reach_core display_plugin_description.x
 # MoveIt Reach Path Plugin
 add_library(path_plugins
   src/path/cartesian_path_generation.cpp
+  src/path/free_space_path_generation.cpp
 )
 target_include_directories(path_plugins
   PUBLIC

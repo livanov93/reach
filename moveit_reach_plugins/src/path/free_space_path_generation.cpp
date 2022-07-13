@@ -16,13 +16,16 @@
 /* Authors: Lovro Ivanov, @livanov93
    Desc:
 */
-#include "moveit_reach_plugins/path/cartesian_path_generation.h"
+
+#include "moveit_reach_plugins/path/free_space_path_generation.h"
 
 #include "moveit_reach_plugins/utils.h"
 
 #include <algorithm>
 
+#include <moveit/kinematic_constraints/utils.h>
 #include <moveit/planning_scene/planning_scene.h>
+#include <moveit/robot_state/conversions.h>
 #include <moveit/trajectory_processing/iterative_time_parameterization.h>
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <reach_core/utils/general_utils.h>
@@ -39,9 +42,9 @@ T clamp(const T& val, const T& low, const T& high) {
 namespace moveit_reach_plugins {
 namespace path {
 
-CartesianPathGeneration::CartesianPathGeneration() : PathBase() {}
+FreeSpacePathGeneration::FreeSpacePathGeneration() : PathBase() {}
 
-bool CartesianPathGeneration::initialize(
+bool FreeSpacePathGeneration::initialize(
     const std::string& name, rclcpp::Node::SharedPtr node,
     const std::shared_ptr<const moveit::core::RobotModel> model) {
   // interface to outer ros params and descriptions
@@ -50,10 +53,10 @@ bool CartesianPathGeneration::initialize(
   name_ = name;
 
   auto LOGGER = rclcpp::get_logger(
-      name_ + ".moveit_reach_plugins.CartesianPathGeneration");
+      name_ + ".moveit_reach_plugins.FreeSpacePathGeneration");
 
   std::string param_prefix = "path_generation_config." + name_ + ".";
-  // get parameters for cartesian path computation
+  // get parameters for FreeSpace path computation
   try {
     double global_tx = 0.0, global_ty = 0.0, global_tz = 0.0;
     double global_rx = 0.0, global_ry = 0.0, global_rz = 0.0;
@@ -164,17 +167,6 @@ bool CartesianPathGeneration::initialize(
       return false;
     }
 
-    if (!node->get_parameter(param_prefix + "max_eef_step", max_eef_step_)) {
-      RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
-                   (param_prefix + "max_eef_step").c_str());
-      return false;
-    }
-    if (!node->get_parameter(param_prefix + "jump_threshold",
-                             jump_threshold_)) {
-      RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
-                   (param_prefix + "jump_threshold").c_str());
-      return false;
-    }
     if (!node->get_parameter(param_prefix + "tool_frame", tool_frame_)) {
       RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
                    (param_prefix + "tool_frame").c_str());
@@ -194,17 +186,6 @@ bool CartesianPathGeneration::initialize(
       return false;
     }
 
-    if (!node->get_parameter(param_prefix + "touch_links", touch_links_)) {
-      RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
-                   (param_prefix + "touch_links").c_str());
-      return false;
-    }
-
-    if (std::find(touch_links_.begin(), touch_links_.end(), "") !=
-        touch_links_.end()) {
-      touch_links_.clear();
-    }
-
     if (!node->get_parameter("path_generation_config.collision_mesh_package",
                              collision_mesh_package_)) {
       RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
@@ -219,14 +200,106 @@ bool CartesianPathGeneration::initialize(
       return false;
     }
 
-    // make sure it is positive to follow solvers logic
-    retrieval_path_length_ = std::abs(double(retrieval_path_length_));
-    max_eef_step_ = std::abs(double(max_eef_step_));
-    jump_threshold_ = std::abs(double(jump_threshold_));
+    if (!node->get_parameter(param_prefix + "touch_links", touch_links_)) {
+      RCLCPP_ERROR(LOGGER, "No parameter defined by the name: '%s'",
+                   (param_prefix + "touch_links").c_str());
+      return false;
+    }
+
+    if (std::find(touch_links_.begin(), touch_links_.end(), "") !=
+        touch_links_.end()) {
+      touch_links_.clear();
+    }
+
+    if (!node->get_parameter(param_prefix + "planner_id", planner_id_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "planner_id").c_str());
+      return false;
+    }
+    if (!node->get_parameter(param_prefix + "allowed_planning_time",
+                             allowed_planning_time_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "allowed_planning_time").c_str());
+      return false;
+    }
+    if (!node->get_parameter(param_prefix + "poses_frame_id",
+                             poses_frame_id_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "poses_frame_id").c_str());
+      return false;
+    }
+
+    if (!node->get_parameter(param_prefix + "display_motion_plans",
+                             display_motion_plans_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "display_motion_plans").c_str());
+      return false;
+    }
+
+    if (!node->get_parameter(param_prefix + "publish_planning_requests",
+                             publish_planning_requests_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "publish_planning_requests").c_str());
+      return false;
+    }
+
+    if (!node->get_parameter(param_prefix + "num_planning_attempts",
+                             num_planning_attempts_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "num_planning_attempts").c_str());
+      return false;
+    }
+
+    if (!node->get_parameter(param_prefix + "pipeline_name", pipeline_name_)) {
+      RCLCPP_ERROR(LOGGER,
+                   "No parameter defined by the name "
+                   "'%s' ",
+                   (param_prefix + "pipeline_name").c_str());
+      return false;
+    }
+
+    node->get_parameter_or(param_prefix + "goal_joint_tolerance",
+                           goal_joint_tolerance_, 1e-4);
+    node->get_parameter_or(param_prefix + "goal_position_tolerance",
+                           goal_position_tolerance_, 1e-4);
+    node->get_parameter_or(param_prefix + "goal_orientation_tolerance",
+                           goal_orientation_tolerance_, 1e-4);
+
   } catch (const std::exception& ex) {
     RCLCPP_ERROR_STREAM(LOGGER, ex.what());
     return false;
   }
+
+  workspace_parameter_ = moveit_msgs::msg::WorkspaceParameters();
+
+  // planner creation
+  if (!planner_) {
+    PlanningSpecs spec;
+    spec._robot_model = model;
+    spec._planning_pipeline = pipeline_name_;
+    planner_ = create(node_, spec);
+    planner_->displayComputedMotionPlans(display_motion_plans_);
+    planner_->publishReceivedRequests(publish_planning_requests_);
+
+  } else if (model != planner_->getRobotModel()) {
+    throw std::runtime_error(
+        "Difference in robot models between planner and ik solver");
+  }
+  robot_start_state_pub_ =
+      node->create_publisher<moveit_msgs::msg::DisplayRobotState>(
+          "planner_based_ik_solver_start_state", 1);
 
   // init planning scene
   scene_ = std::make_shared<planning_scene::PlanningScene>(model_);
@@ -265,11 +338,82 @@ bool CartesianPathGeneration::initialize(
 
   // output message about successful initialization
   RCLCPP_INFO(LOGGER, "Successfully initialized '%s' plugin",
-              (name_ + ".CartesianPathGeneration").c_str());
+              (name_ + ".FreeSpacePathGeneration").c_str());
   return true;
 }
 
-std::optional<double> CartesianPathGeneration::solvePath(
+// https://github.com/ros-planning/moveit_task_constructor/blob/60229db010ea305296bc1c90d04faa3e4dacd976/core/src/solvers/pipeline_planner.cpp#L51-L75
+struct PlannerCache {
+  using PlannerID = std::tuple<std::string, std::string>;
+  using PlannerMap =
+      std::map<PlannerID, std::weak_ptr<planning_pipeline::PlanningPipeline>>;
+  using ModelList = std::list<
+      std::pair<std::weak_ptr<const moveit::core::RobotModel>, PlannerMap>>;
+  ModelList cache_;
+
+  PlannerMap::mapped_type& retrieve(
+      const moveit::core::RobotModelConstPtr& model, const PlannerID& id) {
+    // find model in cache_ and remove expired entries while doing so
+    ModelList::iterator model_it = cache_.begin();
+    while (model_it != cache_.end()) {
+      if (model_it->first.expired()) {
+        model_it = cache_.erase(model_it);
+        continue;
+      }
+      if (model_it->first.lock() == model) break;
+      ++model_it;
+    }
+    if (model_it ==
+        cache_.end())  // if not found, create a new PlannerMap for this model
+      model_it =
+          cache_.insert(cache_.begin(), std::make_pair(model, PlannerMap()));
+
+    return model_it->second
+        .insert(std::make_pair(id, PlannerMap::mapped_type()))
+        .first->second;
+  }
+};
+
+// https://github.com/ros-planning/moveit_task_constructor/blob/60229db010ea305296bc1c90d04faa3e4dacd976/core/src/solvers/pipeline_planner.cpp#L77-L102
+planning_pipeline::PlanningPipelinePtr FreeSpacePathGeneration::create(
+    const rclcpp::Node::SharedPtr& node,
+    const FreeSpacePathGeneration::PlanningSpecs& spec) {
+  static PlannerCache cache;
+
+  static constexpr char const* PLUGIN_PARAMETER_NAME = "planning_plugin";
+
+  std::string pipeline_ns = spec._namespace;
+  const std::string parameter_name = pipeline_ns + "." + PLUGIN_PARAMETER_NAME;
+  // fallback to old structure for pipeline parameters in MoveIt
+  if (!node->has_parameter(parameter_name)) {
+    node->declare_parameter(parameter_name,
+                            rclcpp::ParameterType::PARAMETER_STRING);
+  }
+  if (std::string parameter; !node->get_parameter(parameter_name, parameter)) {
+    RCLCPP_WARN(node->get_logger(), "Failed to find '%s.%s'. %s",
+                pipeline_ns.c_str(), PLUGIN_PARAMETER_NAME,
+                "Attempting to load pipeline from old parameter structure. "
+                "Please update your MoveIt config.");
+    pipeline_ns = "move_group";
+  }
+
+  PlannerCache::PlannerID id(pipeline_ns, spec._planning_adapter_param);
+
+  std::weak_ptr<planning_pipeline::PlanningPipeline>& entry =
+      cache.retrieve(spec._robot_model, id);
+  planning_pipeline::PlanningPipelinePtr planner = entry.lock();
+  if (!planner) {
+    // create new entry
+    planner = std::make_shared<planning_pipeline::PlanningPipeline>(
+        spec._robot_model, node, pipeline_ns, PLUGIN_PARAMETER_NAME,
+        spec._planning_adapter_param);
+    // store in cache
+    entry = planner;
+  }
+  return planner;
+}
+
+std::optional<double> FreeSpacePathGeneration::solvePath(
     const std::map<std::string, double>& start_state,
     std::map<std::string, double>& end_state, double& fraction,
     moveit_msgs::msg::RobotTrajectory& moveit_trajectory) {
@@ -282,7 +426,7 @@ std::optional<double> CartesianPathGeneration::solvePath(
   if (!utils::transcribeInputMap(start_state, joint_names,
                                  start_state_subset)) {
     auto LOGGER = rclcpp::get_logger(
-        name_ + ".moveit_reach_plugins.CartesianPathGeneration");
+        name_ + ".moveit_reach_plugins.FreeSpacePathGeneration");
     RCLCPP_ERROR_STREAM(
         LOGGER, __FUNCTION__ << ": failed to transcribe input pose map");
     return {};
@@ -299,13 +443,59 @@ std::optional<double> CartesianPathGeneration::solvePath(
   Eigen::Isometry3d final_target =
       global_transformation_ * target * tool_transformation_;
 
-  double f = moveit::core::CartesianInterpolator::computeCartesianPath(
-      &state, jmg_, trajectory, state.getLinkModel(tool_frame_), final_target,
-      true, moveit::core::MaxEEFStep(max_eef_step_),
-      moveit::core::JumpThreshold(jump_threshold_, jump_threshold_),
-      std::bind(&CartesianPathGeneration::isIKSolutionValid, this,
-                std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3));
+  // free space planning part
+  double f = 0.0;
+
+  //    {
+  //        // initialize motion plan request
+  //        moveit_msgs::msg::MotionPlanRequest req;
+  //        req.group_name = jmg_->getName();
+  //        req.planner_id = planner_id_;
+  //        req.allowed_planning_time = allowed_planning_time_;
+  //
+  //        moveit::core::robotStateToRobotStateMsg(seed_state,
+  //        req.start_state);
+  //
+  //        // publish robot start state
+  //        moveit_msgs::msg::DisplayRobotState robot_start_state_msg;
+  //        robot_start_state_msg.state = req.start_state;
+  //        robot_start_state_pub_->publish(robot_start_state_msg);
+  //
+  //        req.num_planning_attempts = num_planning_attempts_;
+  //        req.max_velocity_scaling_factor = max_velocity_scaling_factor_;
+  //        req.max_acceleration_scaling_factor =
+  //        max_acceleration_scaling_factor_; req.workspace_parameters =
+  //        workspace_parameter_;
+  //
+  //        req.goal_constraints.resize(1);
+  //        geometry_msgs::msg::PoseStamped pose_to_plan;
+  //        pose_to_plan.header.frame_id = poses_frame_id_;
+  //        pose_to_plan.pose = tf2::toMsg(target);
+  //        req.goal_constraints[0] =
+  //        kinematic_constraints::constructGoalConstraints(
+  //                tool_frame_, pose_to_plan, goal_position_tolerance_,
+  //                goal_orientation_tolerance_);
+  //
+  //        moveit_msgs::msg::PlanningScene ps;
+  //        ::planning_interface::MotionPlanResponse res;
+  //
+  //        bool success = planner_->generatePlan(scene_, req, res);
+  //
+  //        if (success) {
+  //            res.trajectory_->getRobotTrajectoryMsg(moveit_trajectory);
+  //            moveit::core::RobotState
+  //            state(res.trajectory_->getLastWayPoint()); solution.clear();
+  //            state.copyJointGroupPositions(jmg_, solution);
+  //            // Convert back to map
+  //            std::map<std::string, double> solution_map;
+  //            for (std::size_t i = 0; i < solution.size(); ++i) {
+  //                solution_map.emplace(joint_names[i], solution[i]);
+  //            }
+  //        }else{
+  //            fraction = 0.0;
+  //            return {};
+  //        }
+  //    }
 
   if (f != 0.0) {
     // moveit trajectory
@@ -338,11 +528,11 @@ std::optional<double> CartesianPathGeneration::solvePath(
   }
 }
 
-std::vector<std::string> CartesianPathGeneration::getJointNames() const {
+std::vector<std::string> FreeSpacePathGeneration::getJointNames() const {
   return jmg_->getJointModelNames();
 }
 
-bool CartesianPathGeneration::isIKSolutionValid(
+bool FreeSpacePathGeneration::isIKSolutionValid(
     moveit::core::RobotState* state, const moveit::core::JointModelGroup* jmg,
     const double* ik_solution) const {
   state->setJointGroupPositions(jmg, ik_solution);
@@ -360,5 +550,5 @@ bool CartesianPathGeneration::isIKSolutionValid(
 }  // namespace moveit_reach_plugins
 
 #include <pluginlib/class_list_macros.hpp>
-PLUGINLIB_EXPORT_CLASS(moveit_reach_plugins::path::CartesianPathGeneration,
+PLUGINLIB_EXPORT_CLASS(moveit_reach_plugins::path::FreeSpacePathGeneration,
                        reach::plugins::PathBase)
