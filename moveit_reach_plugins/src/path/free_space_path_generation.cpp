@@ -301,6 +301,10 @@ bool FreeSpacePathGeneration::initialize(
       node->create_publisher<moveit_msgs::msg::DisplayRobotState>(
           "planner_based_ik_solver_start_state", 1);
 
+  robot_end_state_pub_ =
+      node->create_publisher<moveit_msgs::msg::DisplayRobotState>(
+          "planner_based_ik_solver_end_state", 1);
+
   // init planning scene
   scene_ = std::make_shared<planning_scene::PlanningScene>(model_);
 
@@ -334,6 +338,20 @@ bool FreeSpacePathGeneration::initialize(
     RCLCPP_ERROR_STREAM(LOGGER, "Failed to get joint model group for '"
                                     << planning_group << "'");
     return false;
+  }
+
+  for (const auto& j : jmg_->getActiveJointModelNames()) {
+    double value = 0.0;
+    if (node->get_parameter(param_prefix + "end_state." + j, value)) {
+      RCLCPP_INFO(LOGGER, "Found value...");
+
+      // store value
+      end_state_[j] = value;
+    } else {
+      RCLCPP_INFO(LOGGER, "Cleared end_state_");
+      end_state_.clear();
+      break;
+    }
   }
 
   // output message about successful initialization
@@ -419,6 +437,13 @@ std::optional<double> FreeSpacePathGeneration::solvePath(
     moveit_msgs::msg::RobotTrajectory& moveit_trajectory) {
   moveit::core::RobotState state(model_);
 
+  // if end state is not empty use it directly
+  // if end state is empty use internally retrieved end_state_
+  // if end_state_ is not defined use start state moved for tool and global
+  // transform
+
+  const bool end_state_empty = end_state.empty();
+
   const std::vector<std::string>& joint_names =
       jmg_->getActiveJointModelNames();
 
@@ -435,81 +460,48 @@ std::optional<double> FreeSpacePathGeneration::solvePath(
   state.setJointGroupPositions(jmg_, start_state_subset);
   state.update();
 
-  const Eigen::Isometry3d& target = state.getGlobalLinkTransform(tool_frame_);
-
-  std::vector<std::shared_ptr<moveit::core::RobotState>> trajectory;
-
-  // transform in global and local frame
-  Eigen::Isometry3d final_target =
-      global_transformation_ * target * tool_transformation_;
-
   // free space planning part
   double f = 0.0;
 
-  //    {
-  //        // initialize motion plan request
-  //        moveit_msgs::msg::MotionPlanRequest req;
-  //        req.group_name = jmg_->getName();
-  //        req.planner_id = planner_id_;
-  //        req.allowed_planning_time = allowed_planning_time_;
-  //
-  //        moveit::core::robotStateToRobotStateMsg(seed_state,
-  //        req.start_state);
-  //
-  //        // publish robot start state
-  //        moveit_msgs::msg::DisplayRobotState robot_start_state_msg;
-  //        robot_start_state_msg.state = req.start_state;
-  //        robot_start_state_pub_->publish(robot_start_state_msg);
-  //
-  //        req.num_planning_attempts = num_planning_attempts_;
-  //        req.max_velocity_scaling_factor = max_velocity_scaling_factor_;
-  //        req.max_acceleration_scaling_factor =
-  //        max_acceleration_scaling_factor_; req.workspace_parameters =
-  //        workspace_parameter_;
-  //
-  //        req.goal_constraints.resize(1);
-  //        geometry_msgs::msg::PoseStamped pose_to_plan;
-  //        pose_to_plan.header.frame_id = poses_frame_id_;
-  //        pose_to_plan.pose = tf2::toMsg(target);
-  //        req.goal_constraints[0] =
-  //        kinematic_constraints::constructGoalConstraints(
-  //                tool_frame_, pose_to_plan, goal_position_tolerance_,
-  //                goal_orientation_tolerance_);
-  //
-  //        moveit_msgs::msg::PlanningScene ps;
-  //        ::planning_interface::MotionPlanResponse res;
-  //
-  //        bool success = planner_->generatePlan(scene_, req, res);
-  //
-  //        if (success) {
-  //            res.trajectory_->getRobotTrajectoryMsg(moveit_trajectory);
-  //            moveit::core::RobotState
-  //            state(res.trajectory_->getLastWayPoint()); solution.clear();
-  //            state.copyJointGroupPositions(jmg_, solution);
-  //            // Convert back to map
-  //            std::map<std::string, double> solution_map;
-  //            for (std::size_t i = 0; i < solution.size(); ++i) {
-  //                solution_map.emplace(joint_names[i], solution[i]);
-  //            }
-  //        }else{
-  //            fraction = 0.0;
-  //            return {};
-  //        }
-  //    }
+  // initialize motion plan request
+  moveit_msgs::msg::MotionPlanRequest req;
+  if (!end_state_empty) {
+    req = createReqFromJointSpaceGoal(state, end_state);
+  } else if (!end_state_.empty()) {
+    req = createReqFromJointSpaceGoal(state, end_state_);
+  } else {
+    req = createReqFromTransformedStartState(state);
+  }
 
-  if (f != 0.0) {
-    // moveit trajectory
-    auto result =
-        std::make_shared<robot_trajectory::RobotTrajectory>(model_, jmg_);
-    for (const auto& waypoint : trajectory)
-      result->addSuffixWayPoint(waypoint, 0.0);
+  // publish robot start state
+  //  moveit_msgs::msg::DisplayRobotState robot_start_state_msg;
+  //  robot_start_state_msg.state = req.start_state;
+  //  robot_start_state_pub_->publish(robot_start_state_msg);
+
+  ::planning_interface::MotionPlanResponse res;
+
+  bool success = planner_->generatePlan(scene_, req, res);
+
+  //  moveit_msgs::msg::DisplayRobotState robot_end_state_msg;
+  //
+  //  moveit::core::robotStateToRobotStateMsg(res.trajectory_->getLastWayPoint(),
+  //                                          robot_end_state_msg.state);
+  //
+  //  robot_end_state_pub_->publish(robot_end_state_msg);
+
+  if (success) {
+    // set fraction
+    f = 1.0;
+
     trajectory_processing::IterativeParabolicTimeParameterization timing;
-    timing.computeTimeStamps(*result, max_velocity_scaling_factor_,
+    timing.computeTimeStamps(*res.trajectory_, max_velocity_scaling_factor_,
                              max_acceleration_scaling_factor_);
-    result->getRobotTrajectoryMsg(moveit_trajectory);
+
+    res.trajectory_->getRobotTrajectoryMsg(moveit_trajectory);
 
     std::vector<double> end_state_vec;
-    result->getLastWayPoint().copyJointGroupPositions(jmg_, end_state_vec);
+    res.trajectory_->getLastWayPoint().copyJointGroupPositions(jmg_,
+                                                               end_state_vec);
     end_state = [&] {
       std::map<std::string, double> ret;
       for (size_t i = 0; i < joint_names.size(); ++i) {
@@ -517,8 +509,6 @@ std::optional<double> FreeSpacePathGeneration::solvePath(
       }
       return ret;
     }();
-
-    // set fraction
     fraction = f;
     return f;
 
@@ -544,6 +534,82 @@ bool FreeSpacePathGeneration::isIKSolutionValid(
       (scene_->distanceToCollision(
            *state, scene_->getAllowedCollisionMatrix()) < distance_threshold_);
   return (!colliding && !too_close);
+}
+
+moveit_msgs::msg::MotionPlanRequest
+FreeSpacePathGeneration::createReqFromTransformedStartState(
+    const moveit::core::RobotState& start_state) {
+  moveit_msgs::msg::MotionPlanRequest req;
+
+  req.group_name = jmg_->getName();
+  req.planner_id = planner_id_;
+  req.allowed_planning_time = allowed_planning_time_;
+
+  moveit::core::robotStateToRobotStateMsg(start_state, req.start_state);
+
+  req.num_planning_attempts = num_planning_attempts_;
+  req.max_velocity_scaling_factor = max_velocity_scaling_factor_;
+  req.max_acceleration_scaling_factor = max_acceleration_scaling_factor_;
+  req.workspace_parameters = workspace_parameter_;
+
+  req.goal_constraints.resize(1);
+
+  Eigen::Isometry3d final_target;
+
+  const Eigen::Isometry3d& target =
+      start_state.getGlobalLinkTransform(tool_frame_);
+
+  // transform in global and local frame
+  final_target = global_transformation_ * target * tool_transformation_;
+
+  geometry_msgs::msg::PoseStamped pose_to_plan;
+  pose_to_plan.header.frame_id = poses_frame_id_;
+  pose_to_plan.pose = tf2::toMsg(final_target);
+
+  req.goal_constraints[0] = kinematic_constraints::constructGoalConstraints(
+      tool_frame_, pose_to_plan, goal_position_tolerance_,
+      goal_orientation_tolerance_);
+
+  return req;
+}
+
+moveit_msgs::msg::MotionPlanRequest
+FreeSpacePathGeneration::createReqFromJointSpaceGoal(
+    const moveit::core::RobotState& start_state,
+    std::map<std::string, double> end_state) {
+  moveit_msgs::msg::MotionPlanRequest req;
+
+  req.group_name = jmg_->getName();
+  req.planner_id = planner_id_;
+  req.allowed_planning_time = allowed_planning_time_;
+
+  moveit::core::robotStateToRobotStateMsg(start_state, req.start_state);
+
+  req.num_planning_attempts = num_planning_attempts_;
+  req.max_velocity_scaling_factor = max_velocity_scaling_factor_;
+  req.max_acceleration_scaling_factor = max_acceleration_scaling_factor_;
+  req.workspace_parameters = workspace_parameter_;
+
+  req.goal_constraints.resize(1);
+
+  std::vector<double> end_state_subset;
+  if (!utils::transcribeInputMap(end_state, jmg_->getActiveJointModelNames(),
+                                 end_state_subset)) {
+    auto LOGGER = rclcpp::get_logger(
+        name_ + ".moveit_reach_plugins.FreeSpacePathGeneration");
+    RCLCPP_ERROR_STREAM(
+        LOGGER, __FUNCTION__ << ": failed to transcribe input pose map");
+    return req;
+  }
+  moveit::core::RobotState end_robot_state(model_);
+  // set end state
+  end_robot_state.setJointGroupPositions(jmg_, end_state_subset);
+  end_robot_state.update();
+
+  req.goal_constraints[0] =
+      kinematic_constraints::constructGoalConstraints(end_robot_state, jmg_);
+
+  return req;
 }
 
 }  // namespace path

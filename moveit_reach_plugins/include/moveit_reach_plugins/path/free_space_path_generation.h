@@ -83,11 +83,19 @@ class FreeSpacePathGeneration : public reach::plugins::PathBase {
   static planning_pipeline::PlanningPipelinePtr create(
       const rclcpp::Node::SharedPtr& node, const PlanningSpecs& spec);
 
+  moveit_msgs::msg::MotionPlanRequest createReqFromTransformedStartState(
+      const moveit::core::RobotState& start_state);
+  moveit_msgs::msg::MotionPlanRequest createReqFromJointSpaceGoal(
+      const moveit::core::RobotState& start_state,
+      std::map<std::string, double> end_state);
+
   moveit::core::RobotModelConstPtr model_;
   planning_scene::PlanningScenePtr scene_;
   std::vector<std::string> touch_links_;
   const moveit::core::JointModelGroup* jmg_;
   std::string name_;
+
+  std::map<std::string, double> end_state_;
 
   // planner stuff
   bool display_motion_plans_;
@@ -121,6 +129,8 @@ class FreeSpacePathGeneration : public reach::plugins::PathBase {
  protected:
   rclcpp::Publisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr
       robot_start_state_pub_;
+  rclcpp::Publisher<moveit_msgs::msg::DisplayRobotState>::SharedPtr
+      robot_end_state_pub_;
 };
 
 }  // namespace path

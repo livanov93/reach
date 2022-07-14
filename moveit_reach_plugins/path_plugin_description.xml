@@ -6,4 +6,9 @@
       Cartesian Interpolator plugin
     </description>
   </class>
+  <class name="moveit_reach_plugins/path/FreeSpacePathGeneration" type="moveit_reach_plugins::path::FreeSpacePathGeneration" base_class_type="reach::plugins::PathBase">
+    <description>
+      Free space planning plugins
+    </description>
+  </class>
 </library>
