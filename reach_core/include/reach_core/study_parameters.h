@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 //#include <xmlrpcpp/XmlRpcValue.h>
+#include <map>
 
 namespace reach {
 namespace core {
@@ -71,6 +72,11 @@ struct StudyParameters {
   bool generate_paths;
   bool generate_paths_only;
   bool initial_source_db;
+  bool db_goals_are_start;
+  std::string start_state_pkg;
+  std::string start_state_dir;
+  std::string start_state_name;
+  std::map<std::string, double> start_state;
   bool initial_source_robot_configurations;
   std::vector<std::string> paths;
   std::vector<std::string> path_based_plugins;

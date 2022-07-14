@@ -1,0 +1,9 @@
+# starting robot configuration when path generation source is not database
+start_state:
+  joint_b: -1.7278759594743864
+  joint_e: -0.017453292519943295
+  joint_l: 1.3264502315156903
+  joint_r: 1.2217304763960306
+  joint_s: 1.204277
+  joint_t: 0.40142572795869574
+  joint_u: 1.7627825445142729

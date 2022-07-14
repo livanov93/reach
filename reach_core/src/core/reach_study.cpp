@@ -139,6 +139,9 @@ bool ReachStudy::initializeStudy(const StudyParameters& sp) {
 }
 
 bool ReachStudy::run(const StudyParameters& sp) {
+  RCLCPP_INFO(node_->get_logger(),
+              "RUN RUN RUN RUN RUN RUN RUN RUN RUN RUN RUN ");
+
   // Overwrite the old study parameters
   sp_ = sp;
 
@@ -750,11 +753,21 @@ void ReachStudy::generatePaths() {
       // if it is reached clear paths
       r.paths.clear();
 
-      // get target from db
-      auto start_state = jointStateMsgToMap(r.goal_state);
+      std::map<std::string, double> start_state;
       std::map<std::string, double> end_state;
+
+      // get target from db
+      // decide if first point is goto or from
+      if (sp_.db_goals_are_start) {
+        start_state = jointStateMsgToMap(r.goal_state);
+      } else {
+        start_state = sp_.start_state;
+        end_state = jointStateMsgToMap(r.goal_state);
+      }
+
       double fraction = 0.0;
       moveit_msgs::msg::RobotTrajectory trajectory;
+
       bool total_score_ok = false;
 
       // for each path generator
@@ -772,7 +785,14 @@ void ReachStudy::generatePaths() {
 
           // prepare for next path generator
           start_state = end_state;
+          end_state.clear();
+
         } else {
+          reach_msgs::msg::ReachPath path;
+          path.fraction = fraction;
+          path.moveit_trajectory = trajectory;
+          r.paths.push_back(path);
+
           total_score_ok = false;
           break;
         }

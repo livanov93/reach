@@ -21,6 +21,9 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+// yaml stuff
+#include <yaml-cpp/yaml.h>
+
 class RobotReachStudyNode : public rclcpp::Node {
  public:
   explicit RobotReachStudyNode(const std::string& node_name)
@@ -141,6 +144,37 @@ class RobotReachStudyNode : public rclcpp::Node {
                                sp_.db_dir) ||
           !this->get_parameter("path_generation_config.db.name", sp_.db_name)) {
         return false;
+      }
+
+      this->get_parameter_or("path_generation_config.db_goals_are_start",
+                             sp_.db_goals_are_start, true);
+
+      if (!sp_.db_goals_are_start) {
+        if (!this->get_parameter("path_generation_config.start_state.name",
+                                 sp_.start_state_name) ||
+            !this->get_parameter("path_generation_config.start_state.package",
+                                 sp_.start_state_pkg) ||
+            !this->get_parameter("path_generation_config.start_state.directory",
+                                 sp_.start_state_dir)) {
+          return false;
+        }
+        std::string yaml_path =
+            ament_index_cpp::get_package_share_directory(sp_.start_state_pkg) +
+            "/" + sp_.start_state_dir + "/" + sp_.start_state_name;
+
+        // load yaml and catch exceptions
+        try {
+          YAML::Node config = YAML::LoadFile(yaml_path);
+
+          // get start state map
+          sp_.start_state =
+              config["start_state"].as<std::map<std::string, double>>();
+
+        } catch (const YAML::ParserException& pe) {
+          return false;
+        } catch (const YAML::BadFile& be) {
+          return false;
+        }
       }
 
       if (!this->get_parameter(

@@ -275,6 +275,8 @@ std::optional<double> CartesianPathGeneration::solvePath(
     moveit_msgs::msg::RobotTrajectory& moveit_trajectory) {
   moveit::core::RobotState state(model_);
 
+  const bool end_state_empty = end_state.empty();
+
   const std::vector<std::string>& joint_names =
       jmg_->getActiveJointModelNames();
 
@@ -288,16 +290,38 @@ std::optional<double> CartesianPathGeneration::solvePath(
     return {};
   }
 
+  // set start state
   state.setJointGroupPositions(jmg_, start_state_subset);
   state.update();
 
-  const Eigen::Isometry3d& target = state.getGlobalLinkTransform(tool_frame_);
+  Eigen::Isometry3d final_target;
 
+  // if end state is sent empty - generate goal as relative transform from start
+  // state
+  if (end_state_empty) {
+    const Eigen::Isometry3d& target = state.getGlobalLinkTransform(tool_frame_);
+
+    // transform in global and local frame
+    final_target = global_transformation_ * target * tool_transformation_;
+  } else {
+    // if end state is not empty, take it as is and use it as goal
+    std::vector<double> end_state_subset;
+    if (!utils::transcribeInputMap(end_state, joint_names, end_state_subset)) {
+      auto LOGGER = rclcpp::get_logger(
+          name_ + ".moveit_reach_plugins.CartesianPathGeneration");
+      RCLCPP_ERROR_STREAM(
+          LOGGER, __FUNCTION__ << ": failed to transcribe input pose map");
+      return {};
+    }
+    moveit::core::RobotState end_robot_state(model_);
+    // set end state
+    end_robot_state.setJointGroupPositions(jmg_, end_state_subset);
+    end_robot_state.update();
+    final_target = end_robot_state.getGlobalLinkTransform(tool_frame_);
+  }
+
+  // trajectory for path retrieval
   std::vector<std::shared_ptr<moveit::core::RobotState>> trajectory;
-
-  // transform in global and local frame
-  Eigen::Isometry3d final_target =
-      global_transformation_ * target * tool_transformation_;
 
   double f = moveit::core::CartesianInterpolator::computeCartesianPath(
       &state, jmg_, trajectory, state.getLinkModel(tool_frame_), final_target,

@@ -80,6 +80,15 @@ robot_reach_study_node:
 
       # initial sources are mutually exclusive
       initial_source_db: true     # false
+      # if db_goals_are_start is false, goals from db will be goals in planning
+      # and start state has to be set in yaml file:
+      # db_goals_are_start: false
+      db_goals_are_start: true
+      start_state:
+        name: "start_state.yaml"
+        package: "reach_demo"
+        directory: "config"
+
       db:
         config_name: "demo_config"
         package: "reach_demo"
@@ -113,6 +122,7 @@ robot_reach_study_node:
         jump_threshold: 0.1 # cca 5 degrees
         #########################################################
         distance_threshold: 0.0 # distance threshold for collision checking
+        touch_links: [""]
         global_transformation:
           tx: 0.0
           ty: 0.0
@@ -140,6 +150,7 @@ robot_reach_study_node:
         jump_threshold: 0.1 # cca 5 degrees
         #########################################################
         distance_threshold: 0.0 # distance threshold for collision checking
+        touch_links: [""]
         global_transformation:
           tx: 0.0
           ty: 0.0
