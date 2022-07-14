@@ -154,10 +154,10 @@ robot_reach_study_node:
         goal_position_tolerance: 0.0001
         goal_orientation_tolerance: 0.0001
         poses_frame_id: "base_link"
-#        pipeline_name: "ompl"
-#        planner_id: "RRTConnect"
-        pipeline_name: "pilz_industrial_motion_planner"
-        planner_id: "LIN"
+        pipeline_name: "ompl"
+        planner_id: "RRTConnect"
+#        pipeline_name: "pilz_industrial_motion_planner"
+#        planner_id: "LIN"
         planning_group: "manipulator"
         tool_frame: "tcp"
         distance_threshold: 0.0
@@ -201,10 +201,10 @@ robot_reach_study_node:
         goal_position_tolerance: 0.0001
         goal_orientation_tolerance: 0.0001
         poses_frame_id: "base_link"
-        #        pipeline_name: "ompl"
-        #        planner_id: "RRTConnect"
-        pipeline_name: "pilz_industrial_motion_planner"
-        planner_id: "LIN"
+        pipeline_name: "ompl"
+        planner_id: "RRTConnect"
+        #        pipeline_name: "pilz_industrial_motion_planner"
+        #        planner_id: "LIN"
         planning_group: "manipulator"
         tool_frame: "tcp"
         distance_threshold: 0.0
@@ -304,11 +304,27 @@ robot_reach_study_node:
         goal_position_tolerance: 0.0001
         goal_orientation_tolerance: 0.0001
         poses_frame_id: "base_link"
-#        pipeline_name: "ompl"
-#        planner_id: "RRTConnect"
-        pipeline_name: "pilz_industrial_motion_planner"
-        planner_id: "PTP"
+        pipeline_name: "ompl"
+        planner_id: "RRTConnect"
+        #        pipeline_name: "pilz_industrial_motion_planner"
+        #        planner_id: "LIN"
         planning_group: "manipulator"
         tool_frame: "tcp"
         distance_threshold: 0.0
 
+      path_4:
+        plugin_name: "moveit_reach_plugins/path_generation/CartesianPath"
+        global_transformation:
+          tx: 0.0
+          ty: 0.0
+          tz: 0.0
+          rx: 0.0   #deg
+          ry: 0.0  #deg
+          rz: 0.0    #deg
+        tool_transformation:
+          tx: 0.0
+          ty: 0.0
+          tz: 0.0
+          rx: 0.0   #deg
+          ry: 0.0   #deg
+          rz: 0.0    #deg

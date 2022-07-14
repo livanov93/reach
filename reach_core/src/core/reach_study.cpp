@@ -790,7 +790,7 @@ void ReachStudy::generatePaths() {
         } else {
           reach_msgs::msg::ReachPath path;
           path.fraction = fraction;
-          path.moveit_trajectory = trajectory;
+          //          path.moveit_trajectory = trajectory;
           r.paths.push_back(path);
 
           total_score_ok = false;

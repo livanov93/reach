@@ -44,7 +44,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "parameters_filename",
             description="YAML file for study parameters.",
-            default_value="params.yaml"
+            default_value="params_ompl.yaml"
         )
     )
     declared_arguments.append(
@@ -176,7 +176,7 @@ def generate_launch_description():
         "start_state_max_bounds_error": 0.1,
     }
     # override ompl
-    planning_pipeline_config["move_group"] = pilz_industrial_planning_pipeline
+    # planning_pipeline_config["move_group"] = pilz_industrial_planning_pipeline
 
     # limits
     joint_limits_yaml = {
