@@ -15,7 +15,7 @@
  */
 #include "moveit_reach_plugins/utils.h"
 
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <geometric_shapes/mesh_operations.h>
 #include <geometric_shapes/shape_operations.h>
