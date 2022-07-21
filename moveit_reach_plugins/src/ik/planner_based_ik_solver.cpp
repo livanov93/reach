@@ -20,7 +20,7 @@
 #include "moveit_reach_plugins/ik/planner_based_ik_solver.h"
 
 #include "moveit_reach_plugins/utils.h"
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <algorithm>
 

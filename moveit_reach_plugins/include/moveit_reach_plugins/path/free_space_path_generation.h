@@ -27,7 +27,7 @@
 #include <moveit_msgs/msg/planning_scene.hpp>
 
 // matrix calculation
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <moveit/planning_pipeline/planning_pipeline.h>
 #include <moveit/robot_state/cartesian_interpolator.h>

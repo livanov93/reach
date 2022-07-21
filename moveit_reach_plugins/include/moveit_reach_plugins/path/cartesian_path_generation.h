@@ -26,7 +26,7 @@
 #include <moveit_msgs/msg/planning_scene.hpp>
 
 // cartesian interpolator include
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include <moveit/robot_state/cartesian_interpolator.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
